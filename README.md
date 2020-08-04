@@ -211,7 +211,7 @@ following known issues:
   and will be addressed in the future.
 
 ## Contact
-For questions about the code, contact [http://seas.harvard.edu/~chr/](Chris Rycroft).
+For questions about the code, contact [Chris Rycroft](http://seas.harvard.edu/~chr/).
 
 ## Bibliography
 1. Charles S. Peskin, *The immersed boundary method*, Acta Numerica **11**,
