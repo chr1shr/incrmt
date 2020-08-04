@@ -48,15 +48,15 @@ been tested on Linux, MacOS, and Windows (via [Cygwin](https://www.cygwin.com)).
 
 - The code requires on TGMG, a C++ library for solving linear systems using the
   geometric multigrid method [6,7], which is available as a
-  [http:/github.com/chr1shr/tgmg](separate repository on GitHub).
+  [separate repository on GitHub](http:/github.com/chr1shr/tgmg).
 
 - The code outputs data in a binary format that can be read by the freeware
   plotting program [Gnuplot](http://www.gnuplot.info). The code uses a
   utils-gp, a collection of tools for processing and analyzing Gnuplot output
-  files. This is available as a [http://github.com/chr1shr/utils-gp](separate
-  repository on GitHub).
+  files. This is available as a [separate repository on
+  GitHub](http://github.com/chr1shr/utils-gp).
 
-- The utils-gp repository requires [http://www.libpng.org/pub/png/](libpng) for
+- The utils-gp repository requires [libpng](http://www.libpng.org/pub/png/) for
   making for full functionality, but this dependency can be omitted. To make
   movies of the simulation output [FFmpeg](https://ffmpeg.org) is needed.
 
