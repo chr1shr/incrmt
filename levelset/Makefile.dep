@@ -1,0 +1,10 @@
+heap.o: heap.cc heap.hh config.hh levelset.hh helper.hh sorting.hh \
+ built/leonardo.hh built/bicubic2.cc
+ex_standard.o: ex_standard.cc ex_standard.hh config.hh traverse.hh \
+ helper.hh levelset.hh heap.hh sorting.hh built/leonardo.hh \
+ built/bicubic2.cc
+sorting.o: sorting.cc sorting.hh config.hh built/leonardo.hh \
+ built/leonardo.cc
+helper.o: helper.cc helper.hh config.hh
+levelset.o: levelset.cc heap.hh config.hh levelset.hh helper.hh \
+ sorting.hh built/leonardo.hh built/bicubic2.cc built/bicubic.cc
