@@ -284,8 +284,6 @@ struct obj_flapper : public object {
         const double sth;
         /** The current contraction level of the flapper. */
         double con;
-        /** A pointer to the corresponding obj_field class. */
-        obj_field *op;
 };
 
 /** \brief A class that can track one or more special tracers that move with

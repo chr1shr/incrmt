@@ -95,7 +95,7 @@ The simple three-pronged rotor example that described in Appendix C of the
 paper can be run using four threads on a 128&nbsp;&times;&nbsp;128 grid
 with the following command:
 ```Shell
-OMP_NUM_THREADS=4 ./ftest simple_spin 128
+OMP_NUM_THREADS=4 ./ftest simple-spin 128
 ```
 The code will create a directory called **sspin_128.odr** for the simulation
 output. (Here, the **odr** suffix stands for **o**utput **d**irecto**r**y.)

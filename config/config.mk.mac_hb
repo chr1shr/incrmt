@@ -8,13 +8,13 @@ cflags=-Wall -ansi -pedantic -O3
 lp_lflags=-framework Accelerate
 
 # FFTW flags (installed via Homebrew)
-fftw_iflags=
-fftw_lflags=-lfftw3
+fftw_iflags=-I/usr/local/include
+fftw_lflags=-L/usr/local/lib -lfftw3
 
 # libpng flags (installed via Homebrew)
-png_iflags=
-png_lflags=-lpng
+png_iflags=-I/usr/local/include
+png_lflags=-L/usr/local/lib -lpng
 
 # matio flags (installed via Homebrew)
-matio_iflags=
-matio_lflags=-lmatio
+matio_iflags=-I/usr/local/include
+matio_lflags=-L/usr/local/lib -lmatio
