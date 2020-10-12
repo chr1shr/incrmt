@@ -1,9 +1,9 @@
 #!/usr/bin/perl
 use Getopt::Std;
 getopts("dhj:ln:p:tuw");
-$gpm="../../shared/gpm_process";
-$gpc="../../shared/make_contour";
-$gpp="../../shared/gpp_info";
+$gpm="../utils-gp/gpm_process";
+$gpc="../utils-gp/make_contour";
+$gpp="../utils-gp/gpp_info";
 
 # Print help information if requested
 if ($opt_h) {
