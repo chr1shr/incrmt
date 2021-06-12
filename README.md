@@ -71,7 +71,7 @@ directory, on a Linux computer, type
 ```Shell
 cp config/config.mk.linux ../config.mk
 ```
-On a Mac using GCC 10 installed via [MacPorts](http://www.macports.org), type
+On a Mac using GCC 11 installed via [MacPorts](http://www.macports.org), type
 ```Shell
 cp config/config.mk.mac_mp ../config.mk
 ```
