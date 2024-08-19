@@ -148,4 +148,46 @@ class sim_horiz_flow : public sim_type {
         field *fm;
 };
 
+/** \brief A class describing a simulation with constant horizontal flow. */
+class sim_horiz_half_flow : public sim_type {
+  public:
+        /** The horizontal flow velocity. */
+        const double U;
+        /** Initializes the class constants.
+         * \param[in] U_ the horizontal flow velocity.
+         * \param[in] (ax_,bx_) the coordinate bounds in the x direction.
+         * \param[in] (ay_,by_) the coordinate bounds in the y direction. */
+        sim_horiz_half_flow(double U_,double ax_,double bx_,double ay_,double by_)
+          : sim_type(ax_,bx_,ay_,by_,false,true), U(U_) {}
+        virtual void start(fluid_2d& f2d);
+        virtual void boundary();
+        /** Initializes the velocity to be constant horizontal flow.
+         * \param[in] (x,y) the position.
+         * \param[out] (u,v) the velocity. */
+        virtual void velocity(double x,double y,double &u,double &v) {
+         // Add Vertical push to end of accordian
+          u=0;
+          v=0;
+          /*
+          if(x<ax+0.05)
+            v=U;
+          else
+            v=0;
+          */
+        }
+  private:
+        /** The number of grid cells in the horizontal direction. (Copied from
+         * the parent fluid_2d classs.) */
+        int m;
+        /** The number of grid cells in the vertical direction. (Copied from
+         * the parent fluid_2d class.) */
+        int n;
+        /** The memory step length, taking into account ghost point allocation.
+         * (Copied from the parent fluid_2d class.) */
+        int ml;
+        /** A pointer to the main field data structure in the parent fluid_2d
+         * class. */
+        field *fm;
+};
+
 #endif

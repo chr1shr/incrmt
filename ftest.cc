@@ -5,10 +5,19 @@
 #include <sys/stat.h>
 #include <vector>
 
+// Activate for Windows
+#if (defined(_WIN32) || defined(__WIN32__))
+    #include <direct.h>
+#endif
+
 #include "common.hh"
 #include "object.hh"
 #include "obj_field.hh"
 #include "fluid_2d.hh"
+
+#if (defined(_WIN32) || defined(__WIN32__))
+    #define mkdir(A, B) _mkdir(A)
+#endif
 
 /** Checks to see if two strings are equal.
  * \param[in] (p1,p2) the two strings.
@@ -56,14 +65,22 @@ int main(int argc,char **argv) {
         fputs("Syntax: ./ftest <sim_type> {extra options}\n\n"
               "Simulation types:\n"
               "simple-spin     simple three-pronged rotor\n"
+              "circ-move-oneframe     circle moving through fluid one frame\n"
               "circ-move       circle moving through fluid\n"
               "square          rotating square\n"
+              "rod             rounded rod experiencing constant fluid velocity\n"
+              "Ucurve          U shape being acclerated to the left \n"
+              "UcurveMany      Aseveral U shapes being acclerated to the left \n"              
+              "accordiansingle one accordian being acclerated to the left \n"
+              "accordian_with_circles   multiple accordian and circles acclerated to the left \n"       
+              "twocircles      two circles part of the same levelset\n" 
               "seven-star      rotating seven-pointed star\n"
               "piston          flexible paddle moving through cavity\n"
               "fluid           fluid only\n"
-              "full           solid only\n"
+              "full            solid only\n"
               "flapper         single flapping swimmer\n"
               "flappers        multiple flapping swimmers\n"
+              "hoop            hoop acted on by gravity\n"              
               "conc-hoops      concentric hoops\n"
               "multi-drop      multiple objects sedimenting\n"
               "flag            flapping flag\n",stderr);
@@ -83,20 +100,20 @@ int main(int argc,char **argv) {
                                  // the reference map fields
 
     // File output flags
-    // 1 - u                128 - solid Y
-    // 2 - v                256 - solid phi
-    // 4 - speed            512 - only subregions for solids
+    // 1 - u   (hijacked to be contdivx)         128 - solid Y
+    // 2 - v   (hijacked to be contdivy)          256 - solid phi
+    // 4 - speed (hijacked to be psi)           512 - only subregions for solids
     // 8 - pressure         1024 - add ghost regions
-    // 16 - vorticity       2048 - difference fields
+    // 16 - vorticity       2048 - difference fields	(hijacked to be gradient of phi)
     // 32 - density         4096 - divergence
     // 64 - solid X         8192 - parsable timing information
-    unsigned int fflags=8|16|64|128|256|512;
+    unsigned int fflags=1|2|4|8|16|64|128|256; //1|2|4|8|16|64|128|256; //8|16|64|128|256|512;
 
     // Default fluid/solid parameters
     double rhof=1;            // Fluid density
     double rhos=1;            // Solid density
     double visc=1e-3;         // Fluid viscosity
-    double G=24;              // Shear modulus
+    double G=6; //24;        // Shear modulus
 
     // Specify padding factors for extra viscosity and timestep
     double ev_mult=0.8;       // The multiplier to apply to the extra viscosity
@@ -135,11 +152,12 @@ int main(int argc,char **argv) {
 
         // Set grid resolution and various simulation constants
         m=n=atoi(argv[2]);check_grid(m);
-        G=48;visc=1e-2;rhos=3;
+        G=24;visc=1e-2;rhos=3;
         T=4*M_PI;
 
         // Create object and set non-periodic boundary conditions
-        obj.push_back(new obj_simple_spin(0.8,0.5,0.125,0.2,M_PI,1,fa));
+        obj.push_back(new obj_simple_spin(0.8,0,0.5,0.15,M_PI,1,fa));
+        //obj.push_back(new obj_simple_spin(0.8,0.5,0.125,0.2,M_PI,1,fa));
         sim_t=new sim_type(-1,1,-1,1,false,false);
     } else if(se(argv[1],"circ-move")) {
 
@@ -154,6 +172,21 @@ int main(int argc,char **argv) {
         // Create object and set non-periodic boundary conditions
         obj.push_back(new obj_circle_track(-0.5,-0.5,0.25,2,4,24,argv[1]));
         sim_t=new sim_type(-1,1,-1,1,false,false);
+
+    } else if(se(argv[1],"circ-move-oneframe")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("circ-move-oneframe","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        m=n=atoi(argv[2]);check_grid(m);
+        rhos=4;visc=1e-3;
+        T=3.;num_frames=1;
+
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_circle_track(0,0,0.25,2,4,24,argv[1]));
+        sim_t=new sim_type(-1,1,-1,1,false,false);
+
     } else if(se(argv[1],"square")) {
 
         // Check for the right number of command-line arguments
@@ -162,9 +195,311 @@ int main(int argc,char **argv) {
         // Set grid resolution and various simulation constants
         m=n=atoi(argv[2]);check_grid(m);
         rhos=3;
+        num_frames=1;
 
         // Create object
         obj.push_back(new obj_square(-0.02,0,0.5,0.01,0,2));
+
+    } else if(se(argv[1],"rod")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("rod","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        m=atoi(argv[2]);check_grid(m);
+        n=ceil(8/0.4*m);check_grid(n);
+        rhos=1;visc=1e-3;
+        T=3.;num_frames=5;
+
+        // Create object
+        obj.push_back(new obj_rounded_rod(0,0,0.05,2,2));
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-0.2,0.2,-4,4);
+
+    } else if(se(argv[1],"Ucurve")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("Ucurve","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth = 0.17667;
+        m=atoi(argv[2]);check_grid(m);
+        n=ceil(0.96/(2*xwidth)*m);check_grid(n);
+        rhos=1;visc=1e-3; //solid density and viscosity
+        T=90;num_frames=30000;
+        // Create object
+        obj.push_back(new obj_Ucurve(0,0,0.1,0.14,0.7,2));
+        sim_t=new sim_type(-xwidth,xwidth,-0.08,0.88,false,false);
+        
+    } else if(se(argv[1],"UcurveMany")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("UcurveMany","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        m=atoi(argv[2]);check_grid(m);
+        n=ceil(1.1/0.4*m);check_grid(n);
+        rhos=1;visc=1e-3; //solid density and viscosity
+        T=40;num_frames=20000;
+        // Create object
+        obj.push_back(new obj_Ucurve(0.9,-0.2,0.09,0.14,1.1,3));
+        obj.push_back(new obj_Ucurve(0.3,-0.2,0.09,0.14,1.1,3));
+        obj.push_back(new obj_Ucurve(-0.3,-0.2,0.09,0.14,1.1,3));
+        obj.push_back(new obj_Ucurve(-0.9,-0.2,0.09,0.14,1.1,3));
+
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_type(-1.28,1.28,-1,1,false,false);
+
+    } else if(se(argv[1],"accordiansingle")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("accordiansingle","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=0.8;
+        double yheight=0.3;
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;visc=1e-3; //solid density and viscosity
+        T=6.;num_frames=10000;
+        // Create object
+        obj.push_back(new obj_accordiansingle(0.7,0.1,0.19,7));
+
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);
+
+    } else if(se(argv[1],"accordian_with_circles")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("accordian_with_circles","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=1.28;
+        double yheight=1;
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;visc=1e-3; //solid density and viscosity
+        T=40.;num_frames=20000;
+        // Create objects
+        obj.push_back(new obj_accordianmultiple(0,-0.5,1.2,0.14,0.4,-0.9));
+        // obj.push_back(new obj_accordianmultiple(0, 0, 1.2, 0.14, 0.4, -0.9));
+        obj.push_back(new obj_accordianmultiple(0,0.5,1.2,0.14,0.4,-0.9));
+        obj.push_back(new obj_circle(0.4, 0.7, 0.15, -0.9));
+        obj.push_back(new obj_circle(0, -0.7, 0.15, -0.9));
+        obj.push_back(new obj_circle(-0.4, 0.7, 0.15, -0.9));
+        obj.push_back(new obj_circle(0.4, -0.3, 0.15, -0.9));
+        obj.push_back(new obj_circle(0, 0.3, 0.15, -0.9));
+        obj.push_back(new obj_circle(-0.4, -0.3, 0.15, -0.9));       
+        ///obj.push_back(new obj_circle(0.4, -0.79, 0.15, -0.9));
+        ///obj.push_back(new obj_circle(0, -0.65, 0.15, -0.9));
+        ///obj.push_back(new obj_circle(-0.4, -0.79, 0.15, -0.9));    
+
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);
+
+    } else if(se(argv[1],"twocircles225")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles225","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=12.5316;
+        double yheight=23.7848;
+        double seperation = 10.7595;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=2;G=5;visc=1e-2; //solid density and viscosity
+        T=100.;num_frames=5000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,2.5));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);
+
+    } else if(se(argv[1],"twocircles450")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles450","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=11.190;
+        double yheight=21.429;
+        double seperation = 10.476;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=5.25;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);
+
+    } else if(se(argv[1],"twocircles675")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles675","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.775;
+        double yheight=20.930;
+        double seperation = 10.310;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=8.06;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);   
+
+    } else if(se(argv[1],"twocircles900")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles900","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.575;
+        double yheight=20.690;
+        double seperation = 10.230;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=10.87;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight); 
+
+    } else if(se(argv[1],"twocircles1125")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles1125","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.457;
+        double yheight=20.548;
+        double seperation = 10.183;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=13.68;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);
+
+    } else if(se(argv[1],"twocircles1350")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles1350","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.379;
+        double yheight=20.455;
+        double seperation = 10.152;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=16.50;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);   
+
+    } else if(se(argv[1],"twocircles1575")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles1575","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.324;
+        double yheight=20.388;
+        double seperation = 10.129;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=19.31;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);
+
+    } else if(se(argv[1],"twocircles1800")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles1800","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.282;
+        double yheight=20.339;
+        double seperation = 10.113;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=22.12;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight); 
+
+    } else if(se(argv[1],"twocircles2025")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("twocircles2025","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        double xwidth=10.251;
+        double yheight=20.301;
+        double seperation = 10.100;
+        // To check, yheight > length + radius, xwidth> radius
+        n=atoi(argv[2]);check_grid(n);
+        m=ceil(xwidth/yheight*n);check_grid(m);
+        rhos=1;G=24.93;visc=5e-2; //solid density and viscosity
+        T=150.;num_frames=15000;
+        // Create objects
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_twocircles(10,seperation,10));
+        
+        // Set initial velocity to be constant velocity
+        sim_t=new sim_horiz_half_flow(0,-xwidth,xwidth,-yheight,yheight);                               
+
+    } else if(se(argv[1],"hoop")) {
+
+        // Check for the right number of command-line arguments
+        if(argc!=3) cmd_args("hoop","<grid resolution>");
+
+        // Set grid resolution and various simulation constants
+        m=n=atoi(argv[2]);check_grid(m);
+        rhos=4;visc=1e-3;
+        T=3.;num_frames=200;
+
+        // Create object and set non-periodic boundary conditions
+        obj.push_back(new obj_hoop(0.625,0.05,1));
+        sim_t=new sim_type(-1,1,-1,1,false,false,1,0.5);
+
     } else if(se(argv[1],"seven-star")) {
 
         // Check for the right number of command-line arguments
@@ -211,10 +546,13 @@ int main(int argc,char **argv) {
         m=n=atoi(argv[2]);check_grid(m);
         visc=1e-3;
         T=20;num_frames=200;
-        ntrace=256;
+        ntrace=256; 
 
         // Set initial velocity to be the "pulses" field
-        sim_t=new sim_velocity_pulses;
+
+        sim_t=new sim_horiz_half_flow(0.1,-0.6,0.6,-2,2);
+
+        //sim_t=new sim_velocity_pulses;
 
     } else if(se(argv[1],"full")) {
 
@@ -242,12 +580,15 @@ int main(int argc,char **argv) {
 
         // Set grid resolution and various simulation constants
         m=n=atoi(argv[2]);check_grid(m);
-        rhos=4;G=10;visc=5e-4;
-        T=30;num_frames=600;
+        rhos=4;G=6;visc=5e-4;
+        T=10;num_frames=2000;
 
         // Creat the object, and set the large domain with periodic boundary
         // conditions
-        obj.push_back(new obj_flapper(0,-0.8,0.026,0.25,0.021,0.14,0,2.2,8));
+        //obj.push_back(new obj_flapper(0,-0.4,0.022,0.81,0.021,0.8,0,1.1,4));
+        //WORKED FOR REPULSION 
+        obj.push_back(new obj_flapper(0,-0.4,0.022,0.35,0.021,0.3,0,3,8));
+        //obj.push_back(new obj_flapper(0,-0.8,0.026,0.25,0.021,0.14,0,2.2,8));
         sim_t=new sim_type(-1.5,1.5,-1.5,1.5,false,false);
     } else if(se(argv[1],"flappers")) {
 

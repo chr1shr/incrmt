@@ -15,9 +15,12 @@ obj_field::obj_field(fluid_2d &f,object* obj_,mat_const mc) :
     ml(f.ml), nl(f.nl), mem(ml*nl), G(mc.G), rhos(mc.rhos),
     ev_trans_mult(mc.ev_trans_mult), eps(f.eps), pinw(f.pinw*f.dx),
     set_velocity(mc.set_velocity), sbase(new s_field[mem]), sm(sbase+2*ml+2),
-    ls(ml,nl,f.ax-1.5*f.dx,f.ay-1.5*f.dy,f.dx,f.dy,-eps-4.5*f.dx,eps+4.5*f.dx),
+    ls(ml,nl,f.ax-1.5*f.dx,f.ay-1.5*f.dy,f.dx,f.dy,-eps-2.5*f.dx,eps+2.5*f.dx),
     phi_base(ls.phi), phi(phi_base+2*ml+2), cbase(ls.s), cc(cbase+2*ml+2),
     obj(obj_), tf1(0.5/eps), tf2(0.5/M_PI), tf3(M_PI/eps) {}
+
+// CHANGE NARROW BAND HERE!! narrow band of 7 is from 2.5+4.5=7
+// To give custom size, change -eps-X*f.dx in inside or outside of solid!!
 
 /** Calculates the extra stabilising viscosity in this solid, and updates
  * several metrics used by the parent fluid_2d class in timestep selection.

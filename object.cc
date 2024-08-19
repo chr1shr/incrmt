@@ -30,7 +30,9 @@ double obj_circle::phi(double X,double Y) {
  * \param[in,out] (accx,accy) the acceleration vector to add to. */
 void obj_circle::accel(double x,double y,double X,double Y,
                        double phiv,double &accx,double &accy) {
-    accy-=grav*op->trans_func_in(phiv);
+    //accy-=grav*op->trans_func_in(phiv);
+    accx-=grav*op->trans_func_in(phiv);
+
 }
 
 /** Applies a gravitational acceleration to the square.
@@ -77,7 +79,7 @@ void obj_rounded_rod::accel(double x,double y,double X,double Y,
     accy-=grav*op->trans_func_in(phiv);
 }
 
-/** Computes the level set function of the squaree as a function of position.
+/** Computes the level set function of the square as a function of position.
  * \param[in] (x,y) the position to consider.
  * \return The level set function. */
 double obj_square::phi(double X,double Y) {
@@ -289,7 +291,7 @@ double obj_flapper::phi(double X,double Y) {
 /** Computes the current contraction amount of the flapper.
  * \param[in] time the current simulation time. */
 void obj_flapper::pre_stress_setup(double time) {
-    double a=sin(omega*time);
+    double a= sin(omega*time);
     a*=a*a;a*=a;a*=a;
     con=-amp*a;
 }
@@ -584,4 +586,127 @@ void obj_lamprey::actuate(double X,double Y,mat &F) {
  * \return The level set function. */
 double obj_hoop::phi(double X,double Y) {
     return fabs(sqrt(X*X+Y*Y)-cc)-cr;
+}
+
+/** Computes the level set function as a function of position. For U with rounded ends, U bottom center at origin.
+ * Link to desmos grid: https://www.desmos.com/3d/45a67d2387
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_Ucurve::phi(double X,double Y) {
+    if(0<=Y && Y<=ch) {
+        return fabs(fabs(X)-cc)-cr/2;
+    }
+    else if (ch<Y) {
+        return fabs(sqrt(X*X+(Y-ch)*(Y-ch))-cc)-cr/2;
+    }
+    else if (Y<0) {
+        return sqrt((fabs(X)-cc)*(fabs(X)-cc)+Y*Y)-cr/2;
+    }    
+    return 0.0;
+}
+
+/** Applies an acceleration to the Ucurve.
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_Ucurve::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    if(X>0) {
+        accx-=acceleration*op->trans_func_in(phiv);
+    } else {
+        accx+=acceleration*op->trans_func_in(phiv);
+    }
+}
+
+/** Computes the level set function as a function of position. For accordian with square ends, origin is center of middle U. For cosine accordian, origin is where is would be if plotted. 
+ * https://www.desmos.com/3d/7153f39b40
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_accordiansingle::phi(double X,double Y) {
+    // single u accordian
+    if(fabs(X)<=cc) {
+        return fabs(ch*cos(M_PI*X/cc)-Y)-cr/2;
+    }
+    if(X>cc) {
+        return sqrt((X-cc)*(X-cc)+(Y+ch)*(Y+ch))-cr/2;
+    }    
+    if(X<-cc) {
+        return sqrt((X+cc)*(X+cc)+(Y+ch)*(Y+ch))-cr/2;
+    }
+    return 0.0;
+}
+
+double obj_accordianmultiple::phi(double X,double Y) {
+    // single u accordian
+    if(fabs(X)<=cc) {
+        return fabs(ch*cos(3*M_PI*X/cc)-Y)-cr/2;
+    }
+    if(X>cc) {
+        return sqrt((X-cc)*(X-cc)+(Y+ch)*(Y+ch))-cr/2;
+    }    
+    if(X<-cc) {
+        return sqrt((X+cc)*(X+cc)+(Y+ch)*(Y+ch))-cr/2;
+    }
+    return 0.0;
+}
+
+/** Applies an acceleration to the accordian.
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_accordiansingle::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    accx-=acceleration*op->trans_func_in(phiv);
+    /*
+    if(x>0)  {
+        accx-=acceleration*op->trans_func_in(phiv);
+    }
+    if(x<0)  {
+        accx+=acceleration*op->trans_func_in(phiv);
+    }   
+    */
+}
+
+void obj_accordianmultiple::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    accx-=acceleration*op->trans_func_in(phiv);
+    /*
+    if(x>0)  {
+        accx-=acceleration*op->trans_func_in(phiv);
+    }
+    if(x<0)  {
+        accx+=acceleration*op->trans_func_in(phiv);
+    }   
+    */
+}
+
+/** Computes the level set function as a function of position. Creates two circles above each other located on the y-axis
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_twocircles::phi(double X,double Y) {
+    // Two Circles
+    if(Y>=0) {
+        return -r+sqrt(X*X+(Y-l)*(Y-l));
+    }
+    else {
+        return -r+sqrt(X*X+(Y+l)*(Y+l));
+    }    
+}
+
+/** Applies an acceleration to the two circles
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] (l) the seperation between circles at t=0
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_twocircles::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    if(sqrt(X*X+(Y-l)*(Y-l)) <= 0.5) {
+        accy-=acceleration*op->trans_func_in(phiv);
+    }
+    if(sqrt(X*X+(Y+l)*(Y+l)) <= 0.5) {
+        accy+=acceleration*op->trans_func_in(phiv);
+    }
+    
 }

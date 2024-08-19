@@ -60,9 +60,16 @@ void fluid_2d::output_tracers(const int sn) {
 void fluid_2d::write_files(int sn) {
 
     // Output the velocity components
-    if(fflags&1) output("u",0,sn);
-    if(fflags&2) output("v",1,sn);
-    if(fflags&4) output("spd",2,sn);
+    //if(fflags&1) output("u",0,sn);
+    //if(fflags&2) output("v",1,sn);
+    //if(fflags&4) output("spd",2,sn);
+
+    // Output diagonistics
+    if(fflags&1) output("contdivx",0,sn);
+    if(fflags&2) output("contdivy",1,sn);   
+    ///if(fflags&1) output("gradphidownx",0,sn);
+    ///if(fflags&2) output("gradphidowny",1,sn);
+    if(fflags&4) output("alpha",2,sn);
 
     // Output the pressure, vorticity, density, and divergence
     if(fflags&8) output("p",3,sn);
@@ -90,8 +97,12 @@ void fluid_2d::write_files(int sn) {
 
     // Output the diagnostic fields
     if(fflags&2048) {
-        output("ds",10,sn);
-        output("dp",11,sn);
+        //output("ds",10,sn);
+        //output("dp",11,sn);
+        output("gradphix",10,sn);
+        output("gradphiy",11,sn);
+        
+        
     }
 
     // Output tracer positions if there are any
@@ -151,15 +162,23 @@ void fluid_2d::output(const char *prefix,const int mode,const int sn,int_box &ib
             // vorticity, or density
             field *fp=fbase+ijr;
             switch (mode) {
-                case 0: while(bp<be) *(bp++)=(fp++)->u;break;
-                case 1: while(bp<be) *(bp++)=(fp++)->v;break;
-                case 2: while(bp<be) *(bp++)=(fp++)->spd();break;
+                //case 0: while(bp<be) *(bp++)=(fp++)->u;break;
+                //case 1: while(bp<be) *(bp++)=(fp++)->v;break;
+                //case 2: while(bp<be) *(bp++)=(fp++)->spd();break;
+                //case 0: while(bp<be) *(bp++)=(fp++)->gradphidownx;break;
+                //case 1: while(bp<be) *(bp++)=(fp++)->gradphidowny;break;
+                case 0: while(bp<be) *(bp++)=(fp++)->contdivx;break;
+                case 1: while(bp<be) *(bp++)=(fp++)->contdivy;break;
+                case 2: while(bp<be) *(bp++)=(fp++)->alpha;break;
                 case 3: while(bp<be) *(bp++)=(fp++)->p;break;
                 case 4: while(bp<be) *(bp++)=vorticity(fp++);break;
                 case 5: while(bp<be) *(bp++)=(fp++)->rho;break;
-                case 10: while(bp<be) *(bp++)=(fp++)->c0;break;
-                case 11: while(bp<be) *(bp++)=(fp++)->c1;break;
+                //case 10: while(bp<be) *(bp++)=(fp++)->c0;break;
+                //case 11: while(bp<be) *(bp++)=(fp++)->c1;break;
+                case 10: while(bp<be) *(bp++)=(fp++)->gradphidownx;break;
+                case 11: while(bp<be) *(bp++)=(fp++)->gradphidowny;break;                
                 case 12: while(bp<be) *(bp++)=divergence(fp++);
+
             }
         } else {
 

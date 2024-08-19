@@ -139,6 +139,9 @@ class fluid_2d {
         void solve(double duration,int frames);
         void save_header(double duration,int frames);
         void step_forward(const double& dt);
+        void compute_grad_phi();
+        template<bool left>
+        inline void calc_grad_phi_point(obj_field *op,int ij,double &gradphix,double &gradphiy);
         void compute_stress();
         template<bool left>
         inline void solid_stress(obj_field *op,int ij,double &s1s,double &s2s,double &sfrac,obj_field **collt,int &k);
@@ -146,6 +149,8 @@ class fluid_2d {
         inline void fluid_stress(field* fp,double &s1f,double &s2f);
         template<bool left>
         inline void collision_stress(int ij,double &s1,double &s2,obj_field **collt,int k);
+        template<bool left>
+        inline void selfcontact_stress(field* fp, obj_field *op,int ij,double& s1c,double &s2c,double &alpha,int b);
         void init_fields();
         void init_fields_bend();
         void read_fields(const int& type);

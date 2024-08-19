@@ -5,10 +5,18 @@
 #include <sys/stat.h>
 #include <vector>
 
+#if (defined(_WIN32) || defined(__WIN32__))
+    #include <direct.h>
+#endif
+
 #include "common.hh"
 #include "object.hh"
 #include "obj_field.hh"
 #include "fluid_2d.hh"
+
+#if (defined(_WIN32) || defined(__WIN32__))
+    #define mkdir(A, B) _mkdir(A)
+#endif
 
 int main(int argc,char **argv) {
 

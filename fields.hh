@@ -13,14 +13,25 @@ struct field {
     double p;
     /** The current density. */
     double rho;
-    /** Gradient of velocity, stored at the cell-center. */
-    double ux,uy,vx,vy;
     /** Velocities extrapolated to edges. */
+    double ux,uy,vx,vy;
+    /** Gradient of velocity, stored at the cell-center. */
     double ud,vd,ul,vl,ur,vr,uu,vu;
-    /** Temporary storage for intermediate quantities. */
-    double c0,c1,c2,c3;
     /** Solid stress. */
     double s11,s12,s21,s22;
+    /** Temporary storage for intermediate quantities. */
+    double c0,c1,c2,c3;
+    /** Gradient total phi field. */
+    double gradphidownx,gradphidowny,gradphileftx,gradphilefty;    
+    /** Self-Contact stress tensor components. */
+    double s11c,s12c,s21c,s22c;
+    // Diagnostic fields (not needed, just exist for diagnostics)
+    /** divergence contact x direction*/
+    double contdivx,contdivy;
+    /** alpha self-repulsion field.*/
+    double alpha;
+
+
     /** Computes the speed, calculated using the Euclidean norm of the velocity
      * vector.
      * \return The speed. */

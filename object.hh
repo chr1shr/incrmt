@@ -610,4 +610,106 @@ struct obj_hoop : public object {
     virtual double phi(double X,double Y);
 };
 
+/** \brief Class to represent a U shape. Origin is center of bottom two U appendages. */
+struct obj_Ucurve : public object {
+    /** The x position of the center. */
+    const double cx;
+    /** The y position of the center. */
+    const double cy;    
+    /** The radii of the U top semi-circle. */
+    const double cc;
+    /** The thickness of the U. */
+    const double cr;
+     /** The height of the U appendages */
+    const double ch;
+    /** Accel to apply to the U in the negative x direction. */
+    const double acceleration;
+    /** Initializes the U object.
+     * \param[in] (r_u,width,height) the upper radius, the width,and the height of the U.
+     * \param[in] accel the acceleration to apply to the U. */
+    obj_Ucurve(double centerx, double centery, double r_u,double width,double height,double acceleration_) :
+        cx(centerx), cy(centery), cc(r_u), cr(width),ch(height), acceleration(acceleration_) {}
+    /** Calculates the initial reference map at a position, applying a
+
+     * translation by the (cx,cy) vector.
+     * \param[in] (x,y) the position to consider.
+     * \param[out] (X,Y) the coordinates of the reference map. */
+    virtual void transform(double x,double y,double &X,double &Y) {
+        X=x-cx;Y=y-cy;
+    }
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+};
+
+/** \brief Class to represent an accordian shape. Origin is center of middle accordian. https://www.desmos.com/3d/ae4b377609. Currently using cosine accordian with 3 bends: 
+ * https://www.desmos.com/3d/347bd207f8?lang=fr*/
+struct obj_accordiansingle : public object {
+    /** The length of the accordian arms. Becomes total half length of cosine accordian*/
+    const double cc;
+    /** The thickness (width) of the accordian. */
+    const double cr;
+     /** The height of the appendages */
+    const double ch;
+    /** Accel to apply to the in the negative x direction. */
+    const double acceleration;
+    /** Initializes the accordian object.
+     * \param[in] (radius,width,height) the radii, the width,and the height of the accordian.
+     * \param[in] accel the acceleration to apply. */
+    obj_accordiansingle(double length,double width,double height,double acceleration_) :
+        cc(length), cr(width),ch(height), acceleration(acceleration_) {}
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+};
+
+struct obj_accordianmultiple : public object {
+    /** The x position of the center. */
+    const double cx;
+    /** The y position of the center. */
+    const double cy;
+    /** The length of the accordian arms. Becomes total half length of cosine accordian*/
+    const double cc;
+    /** The thickness (width) of the accordian. */
+    const double cr;
+     /** The height of the appendages */
+    const double ch;
+    /** Accel to apply to the in the negative x direction. */
+    const double acceleration;
+    /** Initializes the accordian object.
+     * \param[in] (radius,width,height) the radii, the width,and the height of the accordian.
+     * \param[in] accel the acceleration to apply. */
+    obj_accordianmultiple(double centerx, double centery, double length,double width,double height,double acceleration_) :
+        cx(centerx), cy(centery), cc(length), cr(width),ch(height), acceleration(acceleration_) {}
+    /** Calculates the initial reference map at a position, applying a
+     * translation by the (cx,cy) vector.
+     * \param[in] (x,y) the position to consider.
+     * \param[out] (X,Y) the coordinates of the reference map. */
+    virtual void transform(double x,double y,double &X,double &Y) {
+        X=x-cx;Y=y-cy;
+    }
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+};
+
+/** \brief Class to represent two circles along the y axis. https://www.desmos.com/3d/xgzdmigp1o?lang=fr. */
+struct obj_twocircles : public object {
+    /** The radius of the circles */
+    const double r;
+    /** The seperation of the circles from the x-axis*/
+    const double l;
+    /** Accel to apply to the in the negative y direction. */
+    const double acceleration;
+    /** Initializes the circles.
+     * \param[in] (radius,length).
+     * \param[in] accel the acceleration to apply. */
+    obj_twocircles(double radius,double length,double acceleration_) :
+        r(radius), l(length), acceleration(acceleration_) {}
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+};
+
+
 #endif
