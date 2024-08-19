@@ -88,9 +88,8 @@ splot 'Ucurve.odr/alpha.1000' matrix binary notitle
 set contour base
 set cntrparam levels discrete 0
 splot 'Ucurve.odr/phi.1000' matrix binary notitle with line
-unset multiplot
 splot $Vec using 1:2:5:3:4:5 with vectors notitle
-
+unset multiplot
 ```
 For more plotting commands, consult the [Gnuplot documention](http://www.gnuplot.info/documentation.html)
 
@@ -105,4 +104,4 @@ type
 In addition to the existing IncRMT structure, our method for self-repulsion introduces two new globally defined field using the **field** data structure. First a field storing levelset gradients, calculated at each timestep using a finite difference approximation. These are used to construct self-contact stress terms. Since this field is globally defined and object independent, all levelsets are used to calculate it, removing the necessity for multiple levelsets for many object simulations. Secondly is a field storing the magnitude of the self-contact stress tensor. While this field is not strictly necessary for simulations, it is helpful to record as a diagnostic and visualization tool. 
 
 ## Contact
-For questions about the self-contact implementation, contact [Teo Lara](teolara@mit.edu).
+For questions about the self-contact implementation, contact Teo Lara (*teolara@mit.edu*).
