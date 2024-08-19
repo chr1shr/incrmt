@@ -1,94 +1,20 @@
-# IncRMT: A C++ implementation of the incompressible reference map technique
-This repository contains an implementation of the incompressible reference map
-technique (RMT), a numerical method for simulating fluid–structure interaction
-problems on a single fixed background grid. The code provided here can perform
-many examples and tests of the method that are described in the following
-scientific publication:
+# A Method for Self-Contact Within IncRMT
+This branch contains the numerical implementation of a method for self-repulsion, 
+allowing submersed bodies to come into contact with themselves. Previously, the 
+problem with such contacts was a failure in the extrapolation of the reference 
+map field. Upon nearing a portion of itself, a solid's reference map extrapolation 
+procedure breaks down, being unable to evolve the reference map into a non-solid 
+region. By implementing a self-contact stress which detects when a body approches 
+itself, we use an additional stress tensor term to update the velocity field in 
+such a way to avoid self-contact. Since we can handle collisions of a single 
+body with itself, we have also developed the capability of modeling many bodies 
+with a single levelset. Where previously we treated multiple bodies with their 
+own levelset fields, we can now evolve one levelset containing all bodies and 
+treat all contacts as self-collisions. The code here can peform a variety of simulations and carries out all examples and tests described in the following publication:
 
-- Chris H. Rycroft, Chen-Hung Wu, Yue Yu, and Ken Kamrin, *Reference map
-  technique for incompressible fluid–structure interaction*, Journal of Fluid
-  Mechanics **898**, A9 (2020).
-  [doi:10.1017/jfm.2020.353](https://doi.org/10.1017/jfm.2020.353)
 
-## Background
-Fluid–structure interaction problems occur in many scientific and industrial
-applications. Examples include the airflow around a bird's wing, the fluttering
-of a flag in the wind, or the movement of a ship through the ocean.
 
-The typical approach to simulate a solid is to employ a moving computational
-mesh that deforms with the solid object. This approach is taken in popular
-solid mechanics software packages such as
-[Abaqus](https://www.3ds.com/products-services/simulia/products/abaqus/).
-However, the typical approach for fluid simulation is to use a fixed background
-computational mesh, as used in popular fluid mechanics software packages such
-as
-[Fluent](https://www.ansys.com/products/fluids/ansys-fluent). For fluid–structure
-interaction problems it is necessary to bridge these two perspectives, and
-a wide variety of approaches exist in the literature. For example, the
-widely-used immersed boundary method develops transfer operators for switching
-between these two approaches [1].
-
-The reference map technique (RMT) is a computational method that allows fluids
-and solids to be simulated using a single fixed background grid. This greatly
-simplifies the coupling between the solid and fluid phases. The key idea is to
-introduce a *reference map* field, which tracks where the solid started from,
-and is sufficient to implement large-strain solid mechnics. The original idea
-was developed by Kamrin, Nave, and Rycroft [2,3,4], to simulate a single
-compressible solid in a fluid. The numerical methods were subsequently improved
-by Valkov, Rycroft, and Kamrin [5] to simulate multiple solids.
-
-This repository contains examples and tests of the RMT to support the recent
-publication by Rycroft *et al.* listed above. The implementation is a major
-improvement over previous work, and in particular can simulate incompressible
-fluids and solids, which is appropriate for many problems.
-
-## Compiling the code
-The code is written in C++ and uses the OpenMP library for multithreading. It has
-been tested on Linux, MacOS, and Windows (via [Cygwin](https://www.cygwin.com)).
-
-- The code requires on TGMG, a C++ library for solving linear systems using the
-  geometric multigrid method [6,7], which is available as a
-  [separate repository on GitHub](http:/github.com/chr1shr/tgmg).
-
-- The code outputs data in a binary format that can be read by the freeware
-  plotting program [Gnuplot](http://www.gnuplot.info). The code uses a
-  utils-gp, a collection of tools for processing and analyzing Gnuplot output
-  files. This is available as a [separate repository on
-  GitHub](http://github.com/chr1shr/utils-gp).
-
-- The utils-gp repository requires [libpng](http://www.libpng.org/pub/png/) for
-  making for full functionality, but this dependency can be omitted. To make
-  movies of the simulation output [FFmpeg](https://ffmpeg.org) is needed.
-
-By default the code assumes that the **incrmt**, **tgmg**, and **utils-gp**
-repositories are placed in the same parent directory.
-
-To compile the code it is necessary to create a common configuration file
-called **config.mk** in the parent directory, which can be used by all three
-repositories. Several templates are provided in the **config** directory. To
-use, copy one of the templates into the parent directory. From the incrmt
-directory, on a Linux computer, type
-```Shell
-cp config/config.mk.linux ../config.mk
-```
-On a Mac using GCC 11 installed via [MacPorts](http://www.macports.org), type
-```Shell
-cp config/config.mk.mac_mp ../config.mk
-```
-On a Mac using GCC installed via [Homebrew](http://brew.sh), type
-```Shell
-cp config/config.mk.mac_hb ../config.mk
-```
-On a Windows computer with Cygwin installed, type
-```Shell
-cp config/config.mk.win_cw ../config.mk
-```
-After this, the code can be compiled by typing
-```Shell
-make
-```
-This will build several executables such as **ftest**, **conv_test**, and
-**sediment**.
+This branch modifies the existing IncRMT code to support the recent publication of Lara *et al.* listed above. The installation and build steps are unmodified.
 
 ## Example
 The simple three-pronged rotor example that described in Appendix C of the
