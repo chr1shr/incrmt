@@ -10,7 +10,7 @@ such a way to avoid self-contact. Since we can handle collisions of a single
 body with itself, we have also developed the capability of modeling many bodies 
 with a single levelset. Where previously we treated multiple bodies with their 
 own levelset fields, we can now evolve one levelset containing all bodies and 
-treat all contacts as self-collisions. The code here can peform a variety of 
+treat all contacts as self-collisions. The code here can perform a variety of 
 simulations and carries out all examples and tests described in the following 
 publication:
 
@@ -31,37 +31,68 @@ will create a **Ucurve.odr** directy for simulation outputs. The output director
 contains the following filetypes:
 - **contdivx**.*<n>* and **contdivy**.*<n>*, the self-repulsion force vectors at 
 frame *n* stored in a binary format;
-- **psi**.*<n>*, the fluid tracer positions at frame *n* stored in binary format;
-contains the following filetypes:
+- **alpha**.*<n>*, the alpha magnitude of the self-contact stress tensor at 
+frame *n* stored in a binary format;
 - **p**.*<n>*, the pressure field at frame *n* stored in binary format;
 - **w**.*<n>*, the vorticity field at frame *n* stored in binary format;
 - **X**.*<n>* and **Y**.*<n>*, the components of the reference map at frame *n*;
 - **phi**.*<n>*, the levelset field at frame *n* stored in binary format;
 - **header**, a small text file containing the number of simulation frames and
   the time interval simulated.
-The outputs can be modified near the top of the **ftest.cc** code.
 
+The outputs can be modified near the top of the **ftest.cc** code. To save memory,
+only every 50th frame has its outputs saved. This can be modified near the 
+top of the **fluid_2d.cc** code.
 
-
-In Gnuplot, the vorticity field at *t*&nbsp;=&nbsp;2&pi; can be plotted using
-the following commands:
+In Gnuplot, the alpha field can be plotted using the following command at output *n=1000*:
 ```Gnuplot
+set view 0,90,,
 set pm3d map
-splot 'sspin_128.odr/w.120' matrix binary
+splot 'Ucurve.odr/alpha.1000' matrix binary
 ```
-If FFmpeg is installed, then the following command can be used to generate a
-movie:
-```Shell
-./gnuplot_movie.pl -t sspin_128.odr w -10 10
+Using the multiplot environment, the levelset edge can be visualized:
+```Gnuplot
+set view 0,90,,
+set pm3d map
+set multiplot
+splot 'Ucurve.odr/alpha.1000' matrix binary notitle
+set contour base
+set cntrparam levels discrete 0
+splot 'Ucurve.odr/phi.1000' matrix binary notitle with line
+unset multiplot
 ```
-This will generate a QuickTime movie using the H.265 codec called
-**sspin_128_w.mov**. Alternatively, to just make the frames without making
-a movie, the command
-```Shell
-./gnuplot_movie.pl -t -w sspin_128.odr w -10 10
+The self-contact forces can be overlayed with a vector field as follows:
+```Gnuplot
+set table $Coords
+plot Ucurve.odr/contdivx.1000 using 1:2 matrix binary with table
+unset table
+set table $contdivx
+plot Ucurve.odr/contdivx.1000 using 3 matrix binary with table
+unset table
+set table $contdivy
+plot Ucurve.odr/contdivy.1000 using 3 matrix binary with table
+unset table
+
+set print $Vec
+do for [i=1:|$Coords|] {
+if (abs($contdivx[i])>0 || abs($contdivy[i])>0) {
+print $Coords[i], $contdivx[i], $contdivy[i], 0, 0
+}
+}
+unset print
+
+set view 0,90,,
+set pm3d map
+set multiplot
+splot 'Ucurve.odr/alpha.1000' matrix binary notitle
+set contour base
+set cntrparam levels discrete 0
+splot 'Ucurve.odr/phi.1000' matrix binary notitle with line
+unset multiplot
+splot $Vec using 1:2:5:3:4:5 with vectors notitle
+
 ```
-can be used. This will create a directory called **sspin_128.frames** that
-contains the movie frames as PNG images.
+For more plotting commands, consult the [Gnuplot documention](http://www.gnuplot.info/documentation.html)
 
 Many other types of simulation are possible with the **ftest** code, most
 of which are taken from the associated publication. To see a complete list
