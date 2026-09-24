@@ -63,3 +63,21 @@ void sim_horiz_flow::start(fluid_2d &f2d) {
     fm=f2d.fm;
     f2d.zpr=true;
 }
+
+/** Specifies a boundary condition of no flow.
+ */
+void sim_horiz_half_flow::boundary() {
+    for (field *fp=fm-2*ml,*fe=fm+(n+2)*ml;fp<fe;fp+=ml)
+        fp[-1].u=fp[-2].u=0,
+        fp[-1].v=fp[-2].v=0;
+}
+
+/** Sets additional constants for the horizontal half flow simulation.
+ * \param[in] f2d a reference to the parent fluid_2d class. */
+void sim_horiz_half_flow::start(fluid_2d &f2d) {
+    m=f2d.m;
+    n=f2d.n;
+    ml=f2d.ml;
+    fm=f2d.fm;
+    f2d.zpr=false;
+}

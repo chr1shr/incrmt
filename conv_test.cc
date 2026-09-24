@@ -6,10 +6,18 @@
 #include <vector>
 #include <string>
 
+#if (defined(_WIN32) || defined(__WIN32__))
+    #include <direct.h>
+#endif
+
 #include "common.hh"
 #include "object.hh"
 #include "obj_field.hh"
 #include "fluid_2d.hh"
+
+#if (defined(_WIN32) || defined(__WIN32__))
+    #define mkdir(A, B) _mkdir(A)
+#endif
 
 int main(int argc,char **argv) {
 
@@ -61,6 +69,7 @@ int main(int argc,char **argv) {
            rhos[8]={1,1,1,1,3,1,1,1},                           // Solid density
            visc[8]={1e-3,4e-3,1e-20,1e-3,1e-3,1e-3,4e-3,16e-3}, // Fluid viscosity
            G=1,                                                 // Shear modulus
+           mufr=0,                                              // friction coefficient  
            ev_trans_mult=1;
 
     // Specify padding factors for extra viscosity and timestep
@@ -103,7 +112,7 @@ int main(int argc,char **argv) {
     // Use initial velocity field that has six vortices with different length
     // scales
     sim_velocity_pulses sim_t;
-    mat_const mc(G,rhos[ctype],ev_trans_mult,false);
+    mat_const mc(G,rhos[ctype],mufr,ev_trans_mult,false);
 
     // Construct the simulation classes
     for(k=0;k<nsim;k++) {

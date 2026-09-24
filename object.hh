@@ -137,6 +137,39 @@ struct obj_circle : public obj_standard {
                        double phiv,double &accx,double &accy);
 };
 
+
+/** \brief A class to define a circular object with actuation*/
+struct obj_jellyfish : public object {
+    public:
+        /** The x position of the jellyfish center. */
+        const double cx;
+        /** The y position of the jellyfish center. */
+        const double cy;
+        /** The radius of the jellyfish. */
+        const double cr;
+        /** The time at which the muscle contraction is released. */
+        const double T;
+        /** The duraction of the muscle contraction is released. */
+        const double dT;        
+        /** The contraction amplitude. */
+        const double A;
+        obj_jellyfish(double cx_,double cy_,double cr_,double T_,double dT_, double A_) :
+            cx(cx_), cy(cy_), cr(cr_), T(T_), dT(dT_), A(A_) {}
+        /** Calculates the initial reference map at a position, applying a
+         * translation by the (cx,cy) vector.
+         * \param[in] (x,y) the position to consider.
+         * \param[out] (X,Y) the coordinates of the reference map. */
+        virtual void transform(double x,double y,double &X,double &Y) {
+            X=x-cx;Y=y-cy;
+        }
+        virtual double phi(double X, double Y);
+        virtual void pre_stress_setup(double time);
+        virtual void actuate(double X,double Y,mat &F);
+        private:
+        /** The current amplitude of jellyfish contraction. */
+        double Amp;
+};
+
 /** \brief A class to define a square that experiences an accerelation in the
  * negative y direction (e.g. due to gravity). */
 struct obj_square : public obj_standard {
@@ -216,28 +249,121 @@ class obj_seven_point : public object {
 /** \brief A class to define a rounded rod that experiences a gravitational
 * pull. */
 struct obj_rounded_rod : public object {
-    /** The x position of the rod center. */
-    const double cx;
-    /** The y position of the rod center. */
-    const double cy;
-    /** The radius of the rod end caps. */
-    const double cr;
-    /** The half-length of the rod (not counting the end caps). */
-    const double cl;
-    /** The gravitational acceleration to apply to the rod. */
-    const double grav;
-    obj_rounded_rod(double cx_,double cy_,double cr_,double cl_,double grav_) :
-        cx(cx_), cy(cy_), cr(cr_), cl(cl_), grav(grav_) {}
-    /** Calculates the initial reference map at a position, applying a
-     * translation by the (cx,cy) vector.
-     * \param[in] (x,y) the position to consider.
-     * \param[out] (X,Y) the coordinates of the reference map. */
-    virtual void transform(double x,double y,double &X,double &Y) {
-        X=x-cx;Y=y-cy;
-    }
-    virtual void accel(double x,double y,double X,double Y,
-                       double phiv,double &accx,double &accy);
-    virtual double phi(double X,double Y);
+    public:
+        /** The x position of the rod center. */
+        const double cx;
+        /** The y position of the rod center. */
+        const double cy;
+        /** The radius of the rod end caps. */
+        const double cr;
+        /** The half-length of the rod (not counting the end caps). */
+        const double cl;
+        /** The gravitational acceleration to apply to the rod. */
+        const double grav;
+        obj_rounded_rod(double cx_,double cy_,double cr_,double cl_,double grav_) :
+            cx(cx_), cy(cy_), cr(cr_), cl(cl_), grav(grav_) {}
+        /** Calculates the initial reference map at a position, applying a
+         * translation by the (cx,cy) vector.
+         * \param[in] (x,y) the position to consider.
+         * \param[out] (X,Y) the coordinates of the reference map. */
+        virtual void transform(double x,double y,double &X,double &Y) {
+            X=x-cx;Y=y-cy;
+        }
+        virtual void accel(double x,double y,double X,double Y,
+                        double phiv,double &accx,double &accy);
+        virtual double phi(double X,double Y);
+        virtual void pre_stress_setup(double time);
+    private:
+        /** The simulation time */
+        double T;
+};
+
+/** \brief A class to define a rectangle. */
+struct obj_rectangle : public object {
+    public:
+        /** The x position of the center. */
+        const double cx;
+        /** The y position of the center. */
+        const double cy;
+        /** The width of the rectangle. */
+        const double cr;
+        /** The half-length of the rectangle. */
+        const double cl;
+        /** The gravitational acceleration to apply to the rectangle. */
+        const double grav;
+        /** The angle at which gravity is applied, measuring 0 in the -y direction and increasing in the counter clockwise direction. */
+        const double gravangle;
+        /** whether or not the position of the rectangle is fixed */
+        const bool fixed;
+        /** The resistance of the rectangle to moving to a different place. */
+        double K_stiff;
+        obj_rectangle(double cx_,double cy_,double cr_,double cl_,double grav_,double gravangle_,bool fixed_) :
+            cx(cx_), cy(cy_), cr(cr_), cl(cl_), grav(grav_), gravangle(gravangle_), fixed(fixed_) {}
+        /** Calculates the initial reference map at a position, applying a
+         * translation by the (cx,cy) vector.
+         * \param[in] (x,y) the position to consider.
+         * \param[out] (X,Y) the coordinates of the reference map. */
+        virtual void transform(double x,double y,double &X,double &Y) {
+            X=x-cx;Y=y-cy;
+        }
+        virtual void accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy);        
+        virtual double phi(double X,double Y);
+        virtual void start_extra(fluid_2d &f2d);
+        virtual void pre_stress_setup(double time);
+    private:
+        /** The simulation time */
+        double T;
+};
+
+/** \brief A class to define a rectangle. */
+struct obj_lshape : public object {
+    public:
+        /** The width of the rectangle. */
+        const double cr;
+        /** The length of the rectangle. */
+        const double cl;
+        /** The resistance of the rectangle to moving to a different place. */
+        double K_stiff;
+        obj_lshape(double cr_,double cl_) :
+            cr(cr_), cl(cl_) {}
+        virtual void accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy);        
+        virtual double phi(double X,double Y);
+        virtual void start_extra(fluid_2d &f2d);
+        virtual void pre_stress_setup(double time);
+    private:
+        /** The simulation time */
+        double T;
+};
+
+/** \brief A class to define two rectangles. */
+struct obj_tworectangles : public object {
+    public:
+        /** The x distance from the y-axis. */
+        const double cx;
+        /** The y position of the centers, same for both. */
+        const double cy;
+        /** The width of the rectangle. */
+        const double cr;
+        /** The half-length of the rectangle. */
+        const double cl;
+        /** The gravitational acceleration to apply to the rectangle. */
+        const double grav;
+        obj_tworectangles(double cx_,double cy_,double cr_,double cl_,double grav_) :
+            cx(cx_), cy(cy_), cr(cr_), cl(cl_), grav(grav_) {}
+        virtual void accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy);        
+        virtual double phi(double X,double Y);
+        virtual void start_extra(fluid_2d &f2d);
+        virtual void pre_stress_setup(double time);
+    private:
+        /** The simulation time */
+        double T;
+        /** Stiffness */
+        double K_stiff;
+        /** The position of the centres of displaced circles */
+        double pos_x, pos_y;
 };
 
 /** \brief A class to define a filament that can swim with a jellyfish-like
@@ -285,6 +411,57 @@ struct obj_flapper : public object {
         /** The current contraction level of the flapper. */
         double con;
 };
+
+/** \brief A class to define a flagella with two spindly appendages. A circle disk with two appendages that are actuated*/
+struct obj_flagella : public object {
+    public:
+        /** The x position of the flagella center. */
+        const double cx;
+        /** The y position of the flagella center. */
+        const double cy;
+        /** The radius of the flagella end appendages. */
+        const double cr;
+        /** The length of the appendages (not counting the end caps). */
+        const double cl;
+        /** The radius of the end caps of the actuated region. */
+        const double rad;
+        /** The radius the center disk of the flagella. */
+        const double ar;
+        /** The length of the actuated region. */
+        const double al;
+        /** The maximum flapping amplitude. */
+        const double amp;
+        /** The angular frequency of the flapping motion. */
+        const double omega;
+        obj_flagella(double cx_,double cy_,double cr_,double cl_,double rad_,double ar_,
+                    double al_,double theta,double m_stretch,double T) :
+            cx(cx_), cy(cy_), cr(cr_), cl(cl_), rad(rad_), ar(ar_), al(al_),
+            amp(log(m_stretch)/ar), omega(2*M_PI/T), cth(cos(theta)),
+            sth(sin(theta)) {}
+        /** Calculates the initial reference map at a position, applying a
+         * translation by the (cx,cy) vector, and applying a rotation.
+         * \param[in] (x,y) the position to consider.
+         * \param[out] (X,Y) the coordinates of the reference map. */
+        virtual void transform(double x,double y,double &X,double &Y) {
+            x-=cx;y-=cy;
+            X=x*cth+y*sth;
+            Y=-x*sth+y*cth;
+        }
+        virtual double phi(double X,double Y);
+        virtual void pre_stress_setup(double time);
+        virtual void actuate(double X,double Y,mat &F);
+    private:
+        /** Cosine of the flagella rotation angle. */
+        const double cth;
+        /** Sine of the flagella rotation angle. */
+        const double sth;
+        /** The current contraction level of the flagella. */
+        double con;
+};
+
+
+
+
 
 /** \brief A class that can track one or more special tracers that move with
  * the object. */
@@ -600,6 +777,8 @@ struct obj_hoop : public object {
     const double cc;
     /** The thickness of the hoop. */
     const double cr;
+    /** The stiffness constant for the pivot. */
+    double K_stiff;
     /** Gravity to apply to the hoop in the negative y direction. */
     const double grav;
     /** Initializes the circular hoop object.
@@ -608,6 +787,160 @@ struct obj_hoop : public object {
     obj_hoop(double r_in,double r_out,double grav_=0) :
         cc(0.5*(r_in+r_out)), cr((r_out-r_in)*0.5), grav(grav_) {}
     virtual double phi(double X,double Y);
+    virtual void accel(double x,double y,double X,double Y,
+        double phiv,double &accx,double &accy);
 };
+
+/** \brief Class to represent a circle in a hoop. https://www.desmos.com/3d/l3qcyrtvih */
+struct obj_circle_hoop : public object {
+    /** The radius of the inner circle. */
+    const double cr;
+    /** The average radius of the hoop. */
+    const double ca;
+    /** The half thickness of the hoop. */
+    const double ct;
+    /** The fixed angular velocity of the inner circle. */
+    const double omega;
+    /** The stiffness of the resistance to motion of the inner hoop */
+    double K_stiff;
+    /** Initializes the cirlce and circular hoop object.
+     * \param[in] (r, r_in,r_out) the circle radius and inner and outer radii of the hoop. */
+    obj_circle_hoop(double cr,double r_in,double r_out,double omega) :
+        cr(cr), ca(0.5*(r_in+r_out)), ct(0.5*(r_out-r_in)), omega(omega) {}
+    virtual double phi(double X,double Y);
+    virtual void start_extra(fluid_2d &f2d);
+    virtual void accel(double x,double y,double X,double Y,
+        double phiv,double &accx,double &accy);
+    virtual void pre_stress_setup(double time);
+    private:
+    /** The cosine of the current angle of the inner circle. */
+        double cth;
+        /** The sine of the current angle of the inner circle. */
+        double sth;
+};
+
+/** \brief Class to represent a U shape. Origin is center of bottom two U appendages. */
+struct obj_Ucurve : public object {
+    /** The x position of the center. */
+    const double cx;
+    /** The y position of the center. */
+    const double cy;    
+    /** The radii of the U top semi-circle. */
+    const double cc;
+    /** The thickness of the U. */
+    const double cr;
+     /** The height of the U appendages */
+    const double ch;
+    /** Accel to apply to the U in the negative x direction. */
+    const double acceleration;
+    /** Initializes the U object.
+     * \param[in] (r_u,width,height) the upper radius, the width,and the height of the U.
+     * \param[in] accel the acceleration to apply to the U. */
+    obj_Ucurve(double centerx, double centery, double r_u,double width,double height,double acceleration_) :
+        cx(centerx), cy(centery), cc(r_u), cr(width),ch(height), acceleration(acceleration_) {}
+    /** Calculates the initial reference map at a position, applying a
+
+     * translation by the (cx,cy) vector.
+     * \param[in] (x,y) the position to consider.
+     * \param[out] (X,Y) the coordinates of the reference map. */
+    virtual void transform(double x,double y,double &X,double &Y) {
+        X=x-cx;Y=y-cy;
+    }
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+    virtual void start_extra(fluid_2d &f2d);
+
+    virtual void pre_stress_setup(double time);
+    /** The simulation time */
+        double T;
+    /** The stiffness for the prescribed motion*/
+        double K_stiff;
+    };
+
+/** \brief Class to represent an accordian shape. Origin is center of middle accordian. https://www.desmos.com/3d/ae4b377609. Currently using cosine accordian with 3 bends: 
+ * https://www.desmos.com/3d/347bd207f8?lang=fr*/
+struct obj_accordiansingle : public object {
+    /** The length of the accordian arms. Becomes total half length of cosine accordian*/
+    const double cc;
+    /** The thickness (width) of the accordian. */
+    const double cr;
+     /** The height of the appendages */
+    const double ch;
+    /** Accel to apply to the in the negative x direction. */
+    const double acceleration;
+    /** Initializes the accordian object.
+     * \param[in] (radius,width,height) the radii, the width,and the height of the accordian.
+     * \param[in] accel the acceleration to apply. */
+    obj_accordiansingle(double length,double width,double height,double acceleration_) :
+        cc(length), cr(width),ch(height), acceleration(acceleration_) {}
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+};
+
+struct obj_accordianmultiple : public object {
+    /** The x position of the center. */
+    const double cx;
+    /** The y position of the center. */
+    const double cy;
+    /** The length of the accordian arms. Becomes total half length of cosine accordian*/
+    const double cc;
+    /** The thickness (width) of the accordian. */
+    const double cr;
+     /** The height of the appendages */
+    const double ch;
+    /** Accel to apply to the in the negative x direction. */
+    const double acceleration;
+    /** Initializes the accordian object.
+     * \param[in] (radius,width,height) the radii, the width,and the height of the accordian.
+     * \param[in] accel the acceleration to apply. */
+    obj_accordianmultiple(double centerx, double centery, double length,double width,double height,double acceleration_) :
+        cx(centerx), cy(centery), cc(length), cr(width),ch(height), acceleration(acceleration_) {}
+    /** Calculates the initial reference map at a position, applying a
+     * translation by the (cx,cy) vector.
+     * \param[in] (x,y) the position to consider.
+     * \param[out] (X,Y) the coordinates of the reference map. */
+    virtual void transform(double x,double y,double &X,double &Y) {
+        X=x-cx;Y=y-cy;
+    }
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+};
+
+/** \brief Class to represent two circles along the y axis. https://www.desmos.com/3d/xgzdmigp1o?lang=fr. */
+struct obj_twocircles : public object {
+    /** The radius of the circles */
+    const double r;
+    /** The seperation of the circles from the x-axis*/
+    const double l;
+    /** Accel to apply to the in the negative y direction. */
+    const double acceleration_grav;
+    /** velocity to apply to the in the nx direction. */
+    const double velocity_shear;     
+    /** grid spacing. */
+    const double dx;         
+    /** The stiffness for the prescribed motion of the circles */
+    double K_stiff;
+    /** The final y position of the disks after moving them together */
+    double final_y;
+    /** Inner disk movement radius ratio*/
+    double inner_disk_move_ratio;
+    /** Initializes the circles.
+     * \param[in] (radius,length).
+     * \param[in] accel the acceleration to apply. */
+    obj_twocircles(double radius,double length,double acceleration_grav,double velocity_shear,double dx) :
+        r(radius), l(length), acceleration_grav(acceleration_grav), velocity_shear(velocity_shear), dx(dx) {}
+    virtual void accel(double x,double y,double X,double Y,
+                       double phiv,double &accx,double &accy);
+    virtual double phi(double X,double Y);
+    virtual void start_extra(fluid_2d &f2d);
+    virtual void pre_stress_setup(double time);
+    private:
+    /** The position of the centres of displaced circles */
+        double pos_x, pos_y;
+};
+
 
 #endif

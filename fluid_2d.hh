@@ -139,6 +139,14 @@ class fluid_2d {
         void solve(double duration,int frames);
         void save_header(double duration,int frames);
         void step_forward(const double& dt);
+        void compute_combined_phi();
+        void compute_grad_phi();
+        template<bool left>
+        inline void calc_grad_phi_point(field* fp,int ij,double &gradphix,double &gradphiy);
+        inline void calc_grad_phi_point_centre(field* fp,int ij,double &n_1,double &n_2);
+        inline void calc_centred_directionful_lambda(field* fp,int ij,double &lambda_1,double &lambda_2);
+        void estimate_relative_velocity_field(const double& dt);
+        inline void estimate_relative_velocity(field* fp,obj_field *op,int ij,bool use_ustar,const double& dt,double &gamma_dot_estimate);
         void compute_stress();
         template<bool left>
         inline void solid_stress(obj_field *op,int ij,double &s1s,double &s2s,double &sfrac,obj_field **collt,int &k);
@@ -146,6 +154,8 @@ class fluid_2d {
         inline void fluid_stress(field* fp,double &s1f,double &s2f);
         template<bool left>
         inline void collision_stress(int ij,double &s1,double &s2,obj_field **collt,int k);
+        template<bool left>
+        inline void selfcontact_stress(field* fp,obj_field *op,int ij,double& s1c,double &s2c,double &alpha, double &lambda_x, double &lambda_y, int b);
         void init_fields();
         void init_fields_bend();
         void read_fields(const int& type);
@@ -210,7 +220,7 @@ class fluid_2d {
         void copy_pressure();
         double average_pressure();
         void update_reference_map(const double& dt);
-        void compute_ustar(const double& dt);
+        void compute_ustar(const double& dt, bool friction);
         void update_velocity(const double& dt);
         void set_boundaries();
         void set_boundaries_solid();
@@ -218,8 +228,14 @@ class fluid_2d {
         void edge_boundary_conditions_solid_pre();
         void edge_boundary_conditions_solid_post();
         void fem_source_term_conditions();
-        void acceleration(field *fp,int ij,double &accx,double &accy,double x,double y,bool pressure);
+        void compute_div_contact_stress();
+        void compute_curvature_and_river_distance(field *fp, obj_field *op, int ij, double &curvature, double &distest);
+        void compute_normal_and_tangential_force(field *fp, obj_field *op, int ij, const double& dt, double &curvature, double &distest, double &relative_velocity_estimate_tan, double &relative_velocity_estimate_norm, double &F_norm_x, double &F_norm_y, double &F_norm_mag, double &F_tan_x, double &F_tan_y, double &F_tan_mag);
+        void acceleration(field *fp,int ij,double &accx,double &accy,double x,double y,const double& dt,bool friction,bool pressure);
+        void friction_torque_correction(field *fp,obj_field *op,int ij,double &force_torque_correct_x,double &force_torque_correct_y);
         double min_phi(int ij);
+        double phi1(int ij);
+        double phi2(int ij);
         obj_field* min_phi_obj(int ij);
         obj_field* min_corner_phi_obj(int ij);
         double vol_change(int ij);

@@ -176,6 +176,7 @@ void fluid_2d::choose_ev_and_dt(double ev_mult,double dt_pad,double dt_ev_pad,bo
     // Print information if requested
     if(verbose) {
         const char mno[]="",myes[]=" <-- use this";
+        // printf("w_scale %g\n",w_scale); default w-scale is 3
         printf("# Ex. visc. multiplier    : %g\n"
                "# dt padding (phys)       : %g\n"
                "# dt padding (EV)         : %g\n"
@@ -185,7 +186,7 @@ void fluid_2d::choose_ev_and_dt(double ev_mult,double dt_pad,double dt_ev_pad,bo
                "# Shear wave dtmax        : %g (T)%s\n"
                "# Ex. visc. dtmax         : %g (T)%s\n"
                "# Fluid visc. dtmax       : %g (T)%s\n"
-               "# Chosen dtmax            : %g (T)\n",
+               "# Chosen dtmax            : %g (T) \n",
                ev_mult,dt_pad,dt_ev_pad,sws_max,ex_visc_max,visc,dt0,ca==0?myes:mno,
                dt1,ca==1?myes:mno,dt2,ca==2?myes:mno,dt_reg);
     }
@@ -234,8 +235,16 @@ void fluid_2d::init_fields() {
                 fp->v=((1-sfrac)*rhof*vv+mv)*irho;
             }
             fp->p=0;
+
+            /* Set up initial fields*/
+            fp->contdivx = 0;
+            fp->contdivy = 0;
         }
         fp->p=0;
+
+        /* Set up acceleration fields*/
+        fp->contdivx = 0;
+        fp->contdivy = 0;
     }
 
     // Set the final line of the cell-cornered pressure field
@@ -275,7 +284,12 @@ void fluid_2d::solve(double duration,int frames) {
 
         // Output the fields
         t1=wtime();
-        write_files(k+f_num);
+
+        // Only output some files to save disk space teehee a
+        //write_files(k+f_num);
+        if ((k+f_num)%25==0) {
+            write_files(k+f_num);
+        }   
 
         // Print diagnostic information. If the 8192 output flag is set, then
         // output in a machine-readable format. Otherwise, output in a
@@ -339,11 +353,21 @@ void fluid_2d::step_forward(const double& dt) {
     // Reset the ghost points according to the boundary conditions
     set_boundaries();
 
+    // Compute gradient of combined levelset field
+    compute_combined_phi();
+    compute_grad_phi();
+
+    // Calculate distance to nearest other solid through distance estimation
+    estimate_relative_velocity_field(dt);
+
     // Compute stress (half timestep)
     compute_stress();
 
-    // Compute u_star
-    compute_ustar(dt);
+    // Compute divergence of contact stress to then go into acceleration
+    compute_div_contact_stress();
+
+    // Compute u_star - this is where the new acceleration is calculation
+    compute_ustar(dt,true);
 
     // Perform the finite element projection step
     time=ntime;
@@ -361,6 +385,10 @@ void fluid_2d::step_forward(const double& dt) {
     // Reset the ghost points according to the boundary conditions
     set_boundaries();
 
+    // Compute gradient of combined levelset field
+    compute_combined_phi();
+    compute_grad_phi();
+
     // Compute the stress tensor using the reference map
     compute_stress();
 
@@ -376,6 +404,219 @@ void fluid_2d::pin() {
     if(!const_rho) set_rho();
 }
 
+/** Calculate the combined levelset field for all objects */
+void fluid_2d::compute_combined_phi() {
+#pragma omp parallel for
+    for(int j=0;j<n;j++) {
+        for(int i=0;i<m;i++) {
+            int ij=ml*j+i;
+
+            field *fp=fm+ij; // set correct place in field
+
+            double mphi=big_number;
+            double mphi_narrow_band=big_number;
+            for(obj_field **op=olist;op<oe;op++) {
+                if((*op)->phi[ij]<mphi) mphi=(*op)->phi[ij]; // min_phi function oddly does not work- seems to be offset, problem looks to be min_phi
+            }
+
+            obj_field **op=olist;
+            // Make narrow band zone effective twice size of transition zone
+            mphi_narrow_band = mphi>2*(*op)->eps? 2*eps:mphi;
+            mphi_narrow_band = mphi_narrow_band<-2*eps? -2*(*op)->eps:mphi_narrow_band;
+
+            fp->detection_phi_contact = mphi;
+            fp->combinedphi = mphi_narrow_band;
+        }               
+    }
+}
+
+/** Calculate the gradient of the combined levelset field for all objects.*/
+void fluid_2d::compute_grad_phi() { //need to fix edges
+#pragma omp parallel for
+  for(int j=0;j<n+1;j++) {
+        int ij=j*ml;
+        field *fp=fm+ij,*fe=fp+(m+1); // set correct place in field
+        while (fp<fe) {
+
+            calc_grad_phi_point<true>(fp,ij,fp->gradphileftx,fp->gradphilefty);
+            calc_grad_phi_point<false>(fp,ij,fp->gradphidownx,fp->gradphidowny);
+            calc_grad_phi_point_centre(fp,ij,fp->n_1,fp->n_2);
+            calc_centred_directionful_lambda(fp,ij,fp->lambda_1,fp->lambda_2);
+
+            fp++;ij++;
+        }
+    }
+}
+
+/** Calculates gradient of the phi field for a given grid point. These are at grid edges, left and down
+* \param[in] fp a pointer to grid point
+ * \param[in] ij the grid point to consider
+ * \param[out] (gradphix,gradphiy) the gradient phi components to add to. */
+template<bool left>
+inline void fluid_2d::calc_grad_phi_point(field* fp,int ij,double &gradphix,double &gradphiy) {
+    if (left) {
+        gradphix=xsp*(fp->combinedphi-fp[-1].combinedphi);
+        gradphiy=0.25*ysp*(fp[ml].combinedphi+fp[ml-1].combinedphi-fp[-ml].combinedphi-fp[-ml-1].combinedphi);
+    } else {
+        gradphix=0.25*xsp*(fp[1].combinedphi+fp[-ml+1].combinedphi-fp[-1].combinedphi-fp[-ml-1].combinedphi);
+        gradphiy=ysp*(fp->combinedphi-fp[-ml].combinedphi);
+
+    }
+    // Normalize gradphi
+    double gradphi_mag = sqrt(gradphix*gradphix+gradphiy*gradphiy);
+    if (gradphi_mag>small_number) {
+        gradphix = gradphix/gradphi_mag;
+        gradphiy = gradphiy/gradphi_mag;
+
+    } else {
+        gradphix = 0;
+        gradphiy = 0;
+    }
+}
+
+inline void fluid_2d::calc_grad_phi_point_centre(field* fp,int ij,double &n_1,double &n_2) {
+
+    // centred gradphi
+    n_1 = 0.5*(fp->gradphileftx+fp[1].gradphileftx);
+    n_2 = 0.5*(fp->gradphidowny+fp[ml].gradphidowny);
+
+    // Normalize gradphi
+    double gradphi_mag = sqrt(n_1*n_1+n_2*n_2);
+    if (gradphi_mag>small_number) {
+        n_1 /= gradphi_mag;
+        n_2 /= gradphi_mag;
+    } else {
+        n_1 = 0;
+        n_2 = 0;
+    }
+}
+
+inline void fluid_2d::calc_centred_directionful_lambda(field* fp,int ij,double &lambda_1,double &lambda_2) {
+
+    // average lambda
+    lambda_1 = 0.5*(fp->lambda_x_left + fp[1].lambda_x_left);
+    lambda_2 = 0.5*(fp->lambda_y_down + fp[ml].lambda_y_down);
+
+    // Normalize lambda
+    double gradphi_mag = sqrt(lambda_1*lambda_1 + lambda_2*lambda_2);
+    if (gradphi_mag>small_number) {
+        lambda_1 /= gradphi_mag;
+        lambda_2 /= gradphi_mag;
+    } else {
+        lambda_1 = 0;
+        lambda_2 = 0;
+    }
+}
+
+/** Estimate the distance from a given point to the nearest other point on an other solid along the normal direction */
+void fluid_2d::estimate_relative_velocity_field(const double& dt) {
+
+obj_field **op=olist; // do not need to iterate over object list, only looking for size of transition width
+
+#pragma omp parallel for
+  for(int j=0;j<n+1;j++) {
+        int ij=j*ml;
+        field *fp=fm+ij,*fe=fp+(m+1); // set correct place in field
+        while (fp<fe) {
+
+            estimate_relative_velocity(fp,*op,ij,false,dt,fp->relative_velocity_tan_field);
+            if (time < 0) { /// addition for two circles shearing
+            //    fp->relative_velocity_tan_field = 0;
+            }
+
+            fp++;ij++;
+        }
+  }
+}
+
+/** Calculates the estimate of the change in velocity of the nearest point on another solid along the normal at a single point
+ * \param[in] fp a pointer to grid point
+ * \param[in] op a pointer to the object
+ * \param[in] ij the grid point to consider
+ * \param[in] use_ustar whether or not to use ustar and vstar velocities in relative velocity calculations
+ * \param[out] (relative_velocity_estimate) the estimated relative velocity of the partner points dotted with the tangential direction 
+ * */
+inline void fluid_2d::estimate_relative_velocity(field* fp,obj_field *op,int ij,bool use_ustar,const double& dt,double &relative_velocity_estimate) {
+    field &f=*fp; //,&fr=fp[1],&fu=fp[ml];
+    
+    // Method 2: comparing average velocity of patches, one here, one across the river
+    // Get row and column indices of ij
+    int ijrow = ij/ml;
+    int ijcol = ij%ml;
+    int r_max = ceil(8*tw); // circle radius is enough to look all the way across two solids seperated by a river of width 2epsilon
+    
+    if((f.F_norm_mag)<=0) { //calculate only where there is normal force
+        relative_velocity_estimate = 0;
+        return;
+    }
+
+    double here_velocity_patch_integral = 0;
+    double here_patch_velocity_weight = 0;
+    double there_velocity_patch_integral = 0;
+    double there_patch_velocity_weight = 0;
+
+    for(int k=std::max(1,ijcol-r_max);k<=std::min(m-1,ijcol+r_max);k++) {
+        for(int l=std::max(1,ijrow-r_max);l<=std::min(n-1,ijrow+r_max);l++) {
+            double r_x = dx*(k - ijcol);
+            double r_y = dy*(l - ijrow);
+            double r = sqrt(r_x*r_x+r_y*r_y);
+
+            int kl=l*ml+k;
+            field *fk=fm+kl;
+
+            if (r <= r_max*dx && fk->combinedphi > -1.8*(op->eps) && fk->combinedphi < 0) { //only looks on solid side of the narrow band zone when looking at relative velocity
+                //            if (r <= r_max*dx && fabs(fk->combinedphi) <= (op->eps) && fk->combinedphi <= 0) { //only looks on solid side of transition zone when looking at relative velocity
+
+                // dot r and t_here
+                double rdt = (-r_x*(f.lambda_2) + r_y*(f.lambda_1));
+
+                // dot r and n_here
+                double rdn = (r_x*(f.lambda_1) + r_y*(f.lambda_2));
+
+                // dot r and n_there
+                double rdn_there = (r_x*(fk->n_1) + r_y*(fk->n_2));               
+
+                if (rdn < 0 && rdn_there < 0) { //r dot n is negative, looking into solid, also not looking through thin solid
+                    if (use_ustar) {
+                        here_velocity_patch_integral += (-fk->ustar*(fk->n_2) + fk->vstar*(fk->n_1))*(op->smoothed_guassian_bump(rdt)); //*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+                    } else {
+                        here_velocity_patch_integral += (-fk->u*(fk->n_2) + fk->v*(fk->n_1))*(op->smoothed_guassian_bump(rdt)); //*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+                    }
+                    //here_distance_integral += r*(op->smoothed_guassian_bump(rdt))*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+                    here_patch_velocity_weight += (op->smoothed_guassian_bump(rdt)); //*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+
+                    //fk->relative_velocity_tan_field = (-fm[kl].u*(fp->n_2) + fm[kl].v*(fp->n_1))*(op->smoothed_guassian_bump(rdt));
+                }
+
+                if (rdn > 0 && rdn_there < 0) { // we have to assume we will never be looking out through a solid in a river, as in there is never a "island", all solids are thicker than 4*tw
+                    if (use_ustar) {
+                        there_velocity_patch_integral += (-fk->ustar*(-fk->n_2) + fk->vstar*(-fk->n_1))*(op->smoothed_guassian_bump(rdt)); //*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+                    } else {
+                        there_velocity_patch_integral += (-fk->u*(-fk->n_2) + fk->v*(-fk->n_1))*(op->smoothed_guassian_bump(rdt)); //*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+                    }
+                    //there_distance_integral += r*(op->smoothed_guassian_bump(rdt))*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+                    there_patch_velocity_weight += (op->smoothed_guassian_bump(rdt)); //*(op->smoothed_guassian_bump(fk->combinedphi-fp->combinedphi));
+
+                    //fk->relative_velocity_tan_field = (-fm[kl].u*(fp->n_2) + fm[kl].v*(fp->n_1))*(op->smoothed_guassian_bump(rdt));
+                }
+
+            }
+        }
+    }
+    
+    
+    if (here_patch_velocity_weight < small_number && there_patch_velocity_weight < small_number) {
+        relative_velocity_estimate = 0;
+    } else if (here_patch_velocity_weight < small_number) {
+        relative_velocity_estimate = there_velocity_patch_integral/there_patch_velocity_weight; 
+    } else if (there_patch_velocity_weight < small_number) {
+        relative_velocity_estimate = -here_velocity_patch_integral/here_patch_velocity_weight; 
+    } else {
+        relative_velocity_estimate = (there_velocity_patch_integral/there_patch_velocity_weight - here_velocity_patch_integral/here_patch_velocity_weight);
+    }
+    
+}
+
 /** Calculates the stress of the fluid and the reference map using the
  * nonlinear elasticity model. */
 void fluid_2d::compute_stress() {
@@ -383,66 +624,94 @@ void fluid_2d::compute_stress() {
     // Perform any object-specific calculations prior to the stress computation
     for(obj_field **op=olist;op<oe;op++) (*op)->obj->pre_stress_setup(time);
 
-#pragma omp parallel for
+#pragma omp parallel for 
     for(int j=0;j<n+1;j++) {
-        obj_field **collt=coll[omp_get_thread_num()];
+        obj_field **collt=coll[omp_get_thread_num()]; // parallelize over objects
         int ij=j*ml,k;
-        field *fp=fm+ij,*fe=fp+(m+1);
+        
+        field *fp=fm+ij,*fe=fp+(m+1); // set correct place in field
         while (fp<fe) {
 
             // Set left edge stress, by first computing any solid stress
             // components
             k=0;
             double s1s=0,s2s=0,sfrac=0;
-            for(obj_field **op=olist;op<oe;op++)
+
+            for(obj_field **op=olist;op<oe;op++) {
                 solid_stress<true>(*op,ij,s1s,s2s,sfrac,collt,k);
+            }    
 
             // If the solid fraction is greater than 1, the scale the stress
             // values down by this fraction. Otherwise, compute a fluid stress
             // to add in for the remaining stress.
             if(sfrac>=1) {
-                fp->s11=s1s/sfrac;
-                fp->s21=s2s/sfrac;
+                fp->s11=(s1s/sfrac);
+                fp->s21=(s2s/sfrac);
             } else {
                 double s1f,s2f;
                 fluid_stress<true>(fm+ij,s1f,s2f);
-                fp->s11=(1-sfrac)*s1f+s1s;
-                fp->s21=(1-sfrac)*s2f+s2s;
+                fp->s11=((1-sfrac)*s1f+s1s);
+                fp->s21=((1-sfrac)*s2f+s2s);
             }
 
-            // If more than solid is present, then compute the collision stress
+            // Compute self contact stress
+            int b=ceil(2*tw); // Set integration radius equal to less than narrow band wdith, need to worry about different sized x and y grids
+            double s1c=0,s2c=0,alpha=0,lambda_x=0,lambda_y=0;
+            obj_field **op=olist; //This does not have the correct shear modulus for many interacting objects, as in all contacting objects have to have the same material properties
+            selfcontact_stress<true>(fp,*op,ij,s1c,s2c,alpha,lambda_x,lambda_y,b);
+            
+            fp->s11c = s1c;
+            fp->s21c = s2c;
+            fp->alpha_left = alpha;
+            fp->lambda_x_left = lambda_x;
+            fp->lambda_y_left = lambda_y;
+            
+
+            // If more than one solid is present, then compute the collision stress
             // contribution. The indices of the solids involved will be in the
             // collision table.
-            if(k>1) collision_stress<true>(ij,fp->s11,fp->s21,collt,k);
+            // if(k>1) collision_stress<true>(ij,fp->s11,fp->s21,collt,k);
 
-            // Set the down edge stress, by first computing and solid stress
-            // components
+            // Set the down edge stress, by first computing and solid stress components
             k=0;
             s1s=s2s=sfrac=0;
-            for(obj_field **op=olist;op<oe;op++)
+            for(obj_field **op=olist;op<oe;op++) {
                 solid_stress<false>(*op,ij,s1s,s2s,sfrac,collt,k);
+            }   
 
             // If the solid fraction is greater than 1, the scale the stress
             // values down by this fraction. Otherwise, compute a fluid stress
             // to add in for the remaining stress.
             if(sfrac>=1) {
-                fp->s12=s1s/sfrac;
-                fp->s22=s2s/sfrac;
+                fp->s12=(s1s/sfrac);
+                fp->s22=(s2s/sfrac);
             } else {
                 double s1f,s2f;
                 fluid_stress<false>(fm+ij,s1f,s2f);
-                fp->s12=(1-sfrac)*s1f+s1s;
-                fp->s22=(1-sfrac)*s2f+s2s;
+                fp->s12=((1-sfrac)*s1f+s1s);
+                fp->s22=((1-sfrac)*s2f+s2s);
             }
 
+            // Compute self contact stress
+            s1c=s2c=alpha=lambda_x=lambda_y=0;
+            selfcontact_stress<false>(fp,*op,ij,s1c,s2c,alpha,lambda_x,lambda_y,b);
+            
+            fp->s21c = s1c;
+            fp->s22c = s2c;
+            fp->alpha_down = alpha;
+            fp->lambda_x_down = lambda_x;
+            fp->lambda_y_down = lambda_y;
+            
             // If more than solid is present, then compute the collision stress
             // contribution. The indices of the solids involved will be in the
             // collision table.
-            if(k>1) collision_stress<false>(ij,fp->s12,fp->s22,collt,k);
+            // if(k>1) collision_stress<false>(ij,fp->s12,fp->s22,collt,k);
+
             fp++;ij++;
         }
     }
 }
+
 
 /** Computes the stress contribution at an edge, due to collisions between
  * objects.
@@ -452,7 +721,7 @@ void fluid_2d::compute_stress() {
  *                  to the objects that are present at this location.
  * \param[in] k the number of objects on the collision table. */
 template<bool left>
-inline void fluid_2d::collision_stress(int ij,double &s1,double &s2,obj_field** collt,int k) {
+inline void fluid_2d::collision_stress(int ij,double &s1,double &s2,obj_field** collt,int k) { 
     for(int i=0;i<k-1;i++) {
         double *phi1=collt[i]->phi+ij,p1,p1x,p1y;
 
@@ -499,8 +768,146 @@ inline void fluid_2d::collision_stress(int ij,double &s1,double &s2,obj_field** 
     }
 }
 
+/** Computes stress contribution from self-contact
+ * \param[in] fp a pointer to grid point
+ * \param[in] op a pointer to the object.
+ * \param[in] ij the grid point to consider
+ * \param[out] (s1c,s2c) the stress componenets to contribute to
+ * \param[out] (alpha) the alpha component to contribute to.
+ * \param[out] (lambda_x, lambda_y) the self repulsion eigenvector to contribute to.
+ * \param[in] b the radius of the integration circle in gridunits. 
+ */
+template<bool left>
+inline void fluid_2d::selfcontact_stress(field* fp,obj_field *op,int ij,double& s1c,double &s2c,double &alpha, double &lambda_x, double &lambda_y, int b) {
+
+    //double phiv=0.5*(op->phi[ij]+op->phi[ij-(left?1:ml)]); // phi value in grid edge
+    
+    field &fr=fp[-1],&fu=fp[-ml];
+    double phiv=0.5*(fp->detection_phi_contact+(left?fr.detection_phi_contact:fu.detection_phi_contact));
+    
+    if( phiv > 1.8*(op->eps) || phiv < -(op->eps)) { //Calculating psi only in relevant region. For doing force as heaviside*divergence, you can get away with only calculating psi in narrow band and a little over, I like to do 1.8*eps, although 1.5*eps should also work (only need one extra grid cell)
+        // for calculating psi everywhere, do 3.4*eps, we know that whenever two edges are seperated by more than ~2.65*dx+5*dx,  psi will necessarily be less than the flat edge value, also make sure that the detection phi goes out farther than this range. 
+        s1c+=0;
+        s2c+=0;
+        alpha+=0;
+        lambda_x+=0;
+        lambda_y+=0;
+        return; // Comment to remove heaviside (also modify acceleration)
+    }
+    
+    double p1x,p1y;
+    double vecmatrix11=0,vecmatrix12=0,vecmatrix21=0,vecmatrix22=0;
+    double vecmatrixeigflat = 1*b*b; // psi_crit value
+    double mag=-1.0; // magnitude -> NEED TO WORK WITH MANY BODY WITH DIFFERENT G
+    
+    // Get row and column indices of ij
+    int ijrow = ij/ml;
+    int ijcol = ij%ml;
+
+    // We are interested in points around ij
+    for(int k=std::max(1,ijcol-b);k<=std::min(m-1,ijcol+b);k++) {
+        for(int l=std::max(1,ijrow-b);l<=std::min(n-1,ijrow+b);l++) {
+            if((ijcol-k)*(ijcol-k)+(ijrow-l)*(ijrow-l)<=b*b && (k!=ijcol || l!=ijrow)) {
+                int kl=l*ml+k;
+                
+                field *fk=fm+kl;
+                if(left) {
+                    p1x=fk->gradphileftx;
+                    p1y=fk->gradphilefty;
+                } else {
+                    p1x=fk->gradphidownx;
+                    p1y=fk->gradphidowny;
+                }
+                
+                // r pointing vector to point
+                double kd = (ijcol-k)*1.0;
+                double ld = (ijrow-l)*1.0;
+
+                // Take outerproduct
+                vecmatrix11+=kd/(sqrt(kd*kd+ld*ld))*p1x/(sqrt(p1x*p1x+p1y*p1y));
+                vecmatrix12+=kd/(sqrt(kd*kd+ld*ld))*p1y/(sqrt(p1x*p1x+p1y*p1y));
+                vecmatrix21+=ld/(sqrt(kd*kd+ld*ld))*p1x/(sqrt(p1x*p1x+p1y*p1y));
+                vecmatrix22+=ld/(sqrt(kd*kd+ld*ld))*p1y/(sqrt(p1x*p1x+p1y*p1y));
+            }
+        }
+    }
+    
+    // Assemble eigenvectors
+    double vecmatrixdet=vecmatrix11*vecmatrix22-vecmatrix12*vecmatrix21;
+    double vecmatrixtr=vecmatrix11+vecmatrix22;
+
+    double vecmatrixeigvec1=0;
+    double vecmatrixeigvec2=0;
+    double vecmatrixeig=0;
+
+    if(vecmatrixtr*vecmatrixtr-4*vecmatrixdet>=0) {
+        double vecmatrixeig1=vecmatrixtr*0.5+0.5*sqrt(vecmatrixtr*vecmatrixtr-4*vecmatrixdet);
+        double vecmatrixeig2=vecmatrixtr*0.5-0.5*sqrt(vecmatrixtr*vecmatrixtr-4*vecmatrixdet);
+
+        // Maximum eigenvalue
+        vecmatrixeig=std::max(vecmatrixeig1,vecmatrixeig2);
+
+        // Make Eigenvectors
+        if (fabs(vecmatrixeig1)>fabs(vecmatrixeig2)) {
+            if(fabs(vecmatrix11-vecmatrixeig1)>fabs(vecmatrix22-vecmatrixeig1)) {
+                vecmatrixeigvec1=vecmatrix12;
+                vecmatrixeigvec2=-(vecmatrix11-(vecmatrixeig1));
+            }   else {
+                vecmatrixeigvec1=-(vecmatrix22-(vecmatrixeig1));
+                vecmatrixeigvec2=vecmatrix21;
+            }
+        } else {
+            if(fabs(vecmatrix11-vecmatrixeig2)>fabs(vecmatrix22-vecmatrixeig2)) {
+                vecmatrixeigvec1=vecmatrix12;
+                vecmatrixeigvec2=-(vecmatrix11-(vecmatrixeig2));
+            }   else {
+                vecmatrixeigvec1=-(vecmatrix22-(vecmatrixeig2));
+                vecmatrixeigvec2=vecmatrix21;
+            }
+        }
+
+        // Normalize Eigenvectors
+        double nn=sqrt(vecmatrixeigvec1*vecmatrixeigvec1+vecmatrixeigvec2*vecmatrixeigvec2);
+        vecmatrixeigvec1=nn<small_number?0.:vecmatrixeigvec1/nn;
+        vecmatrixeigvec2=nn<small_number?0.:vecmatrixeigvec2/nn;
+    }
+    // store eigenvectors
+    double lambdadotn = 0;
+    if(left) {
+        lambdadotn = (fp->gradphileftx)*vecmatrixeigvec1 + (fp->gradphilefty)*vecmatrixeigvec2;
+    } else {
+        lambdadotn = (fp->gradphidownx)*vecmatrixeigvec1 + (fp->gradphidowny)*vecmatrixeigvec2;
+    }
+    if (lambdadotn > 0) {
+        lambda_x = vecmatrixeigvec1;
+        lambda_y = vecmatrixeigvec2;
+    } else {
+        lambda_x = -vecmatrixeigvec1;
+        lambda_y = -vecmatrixeigvec2;   
+    }
+
+    // If psi>psicrit, then assemble stress tensor
+    if(vecmatrixeig>vecmatrixeigflat) {
+        alpha += (1/(2*b*b-vecmatrixeigflat)*vecmatrixeig-1/(2*b*b-vecmatrixeigflat)*vecmatrixeigflat);
+
+        if(left) {
+            s1c+=mag*(op->G)*alpha*(vecmatrixeigvec1*vecmatrixeigvec1); //*alpha
+            s2c+=mag*(op->G)*alpha*(vecmatrixeigvec1*vecmatrixeigvec2); //*alpha
+        } else { 
+            s1c+=mag*(op->G)*alpha*(vecmatrixeigvec2*vecmatrixeigvec1); //*alpha
+            s2c+=mag*(op->G)*alpha*(vecmatrixeigvec2*vecmatrixeigvec2); //*alpha
+        } 
+    } else {
+        s1c+=0;
+        s2c+=0;
+        alpha+=0;
+    }
+}
+
+
 /** Calculates the solid stress for a given object at an edge grid point.
  * \param[in] op a pointer to the object.
+ * \param[in] ij the grid point to consider
  * \param[in,out] (s1s,s2s) the stress components to add to.
  * \param[in,out] sfrac the solid fraction to add to.
  * \param[in] collt a pointer to the collision table. If the solid is present,
@@ -546,16 +953,45 @@ inline void fluid_2d::solid_stress(obj_field *op,int ij,double &s1s,double &s2s,
            ex_visc=op->ex_visc*tf*(1+op->ev_trans_mult*op->tderiv_func_in(phiv));
     field *fp=fm+ij;
     sfrac+=tf;
+
+    //double s1u=0;
+    //double s1udown=0;
+    //double s1v=0;
+    //double s1vdown=0;
+
+    double ux,vx,uy,vy;
     if(left) {
         s1s+=G*(sigma.a-sfac);
         s2s+=G*sigma.b;
-        s1s+=ex_visc*xsp*(fp->u-fp[-1].u);
-        s2s+=ex_visc*xsp*(fp->v-fp[-1].v);
+        // Full viscosity calculations 
+        ux=xsp*(fp->u-fp[-1].u); //v1,1
+        vx=xsp*(fp->v-fp[-1].v); //v2,1
+        uy=0.25*ysp*(fp[ml].u+fp[ml-1].u-fp[-ml].u-fp[-ml-1].u); //v1,2
+
+        s1s+=ex_visc*ux; //s11
+        s2s+=0.5*ex_visc*(vx+uy); //s21
+
+        //s1u+=(fp->u);
+        //s1udown+=(fp[-1].u);
+        //s1v+=(fp->v);
+        //s1vdown+=(fp[-1].v);
+
     } else {
         s1s+=G*sigma.b;
         s2s+=G*(sigma.d-sfac);
-        s1s+=ex_visc*ysp*(fp->u-fp[-ml].u);
-        s2s+=ex_visc*ysp*(fp->v-fp[-ml].v);
+        // Full viscosity calculations 
+        vx=0.25*xsp*(fp[1].v+fp[-ml+1].v-fp[-1].v-fp[-ml-1].v); //v2,1
+        uy=ysp*(fp->u-fp[-ml].u); //v1,2
+        vy=ysp*(fp->v-fp[-ml].v); //v2,2
+    
+        s1s+=0.5*ex_visc*(vx+uy); //s12
+        s2s+=ex_visc*vy; //s22
+
+        //s1u+=(fp->u);
+        //s1udown+=(fp[-ml].u);
+        //s1v+=(fp->v);
+        //s1vdown+=(fp[-ml].v);
+
     }
 }
 
@@ -885,7 +1321,7 @@ void fluid_2d::normal_derivatives_velocity(const double& dt) {
             field &fd=fp[-ml],&fu=fp[ml];
 
             // Calculate monotonicity-limited derivatives of velocities
-            f.ux=xsp*mono_diff(fp[-2].u,fl.u,f.u,fr.u,fp[2].u);
+            f.ux=xsp*mono_diff(fp[-2].u,fl.u,f.u,fr.u,fp[2].u); // These quantities are centred
             f.vx=xsp*mono_diff(fp[-2].v,fl.v,f.v,fr.v,fp[2].v);
             f.uy=ysp*mono_diff(fp[-2*ml].u,fd.u,f.u,fu.u,fp[2*ml].u);
             f.vy=ysp*mono_diff(fp[-2*ml].v,fd.v,f.v,fu.v,fp[2*ml].v);
@@ -986,7 +1422,7 @@ void fluid_2d::compute_half_time_edge_velocities(const double& dt) {
 
             // Create references to the fields in the neighboring gridpoints
             field *fp=fm+ij,&f=*fp;
-            acceleration(fp,ij,accx,accy,x,y,true);
+            acceleration(fp,ij,accx,accy,x,y,dt,false,true);
 
             // Extrapolate to left
             f.ul=f.u+0.5*(-dx*f.ux+dt*(-f.u*f.ux-f.c2+accx));//
@@ -1007,20 +1443,144 @@ void fluid_2d::compute_half_time_edge_velocities(const double& dt) {
     }
 }
 
+/** Computes divergence of self-repulsion stress tensor */
+void fluid_2d::compute_div_contact_stress() {
+#pragma omp parallel for
+    for(int j=0;j<n;j++) {
+        for(int i=0;i<m;i++) {
+            int ij=ml*j+i;
+
+            field *fp=fm+ij; // set correct place in field
+            field &f=*fp,&fr=fp[1],&fu=fp[ml];
+
+            fp->contdivx = (xsp*(fr.s11c-f.s11c)+ysp*(fu.s12c-f.s12c));
+            fp->contdivy = (xsp*(fr.s21c-f.s21c)+ysp*(fu.s22c-f.s22c));
+
+            obj_field **op=olist;
+            compute_curvature_and_river_distance(fp,*op,ij,fp->curvature,fp->EstDist);
+
+            // curvature correction
+            if (f.curvature <= 0) {
+                double force_curv_scale = (1 + fabs(f.curvature)*((*op)->eps))/(1 + fabs(f.curvature)*(f.EstDist + (*op)->eps));
+                double F_normal_x = (f.contdivx*f.n_1 + f.contdivy*f.n_2)*(f.n_1);
+                double F_normal_y = (f.contdivx*f.n_1 + f.contdivy*f.n_2)*(f.n_2);
+                F_normal_x *= force_curv_scale;
+                F_normal_y *= force_curv_scale;
+                double F_tangential_x = (-f.contdivx*f.n_2 + f.contdivy*f.n_1)*(-f.n_2);
+                double F_tangential_y = (-f.contdivx*f.n_2 + f.contdivy*f.n_1)*(f.n_1);
+                //fp->curvature = force_curv_scale;
+                fp->contdivx = F_normal_x + F_tangential_x;
+                fp->contdivy = F_normal_y + F_tangential_y;
+            }
+
+        }               
+    }
+}
+
+
+/** Computes the local curvature and river width by looking across the the river in the normal direction
+ * \param[in] fp a pointer to the grid point to consider.
+ * \param[in] op a pointer to the object.
+ * \param[in] ij the index of the grid point to consider.
+ * \param[out] curvature the curvature at the surface, negative values curved inwards, positive outwards, scaling only occurs with negative curvature
+ * \param[out] distest the estimated distance between surfaces obtained by integrating across river, this is the distance between phi=0 edges minus twice the transition zone, so only the pure fluid river region
+ * */ 
+void fluid_2d::compute_curvature_and_river_distance(field *fp, obj_field *op, int ij, double &curvature, double &distest) {
+    field &f=*fp;
+
+    double phi_here = f.combinedphi;
+    if(abs(f.contdivx) == 0 &&  abs(f.contdivy) ==0) {
+        distest = 4.5*tw;
+        curvature = 0;
+        return;
+    }
+
+    int ijrow = ij/ml;
+    int ijcol = ij%ml;
+    int r_max = ceil(5*tw);
+
+    // We are interested in points around ij
+    double distance_integral = 0;
+    double weight_integral = 0;
+    double curvature_integral = 0;
+    double curavture_weight = 0;
+
+    for(int k=std::max(1,ijcol-r_max);k<=std::min(m-1,ijcol+r_max);k++) {
+        for(int l=std::max(1,ijrow-r_max);l<=std::min(n-1,ijrow+r_max);l++) {
+            double r_x = dx*(k - ijcol);
+            double r_y = dy*(l - ijrow);
+            double r = sqrt(r_x*r_x+r_y*r_y);
+
+            int kl=l*ml+k;
+            field *fk=fm+kl;
+
+            if(r <= r_max*dx && r != 0) { //Note that we need dx=dy for this method, square grid
+                // dot r and n_here
+                double rdn = (r_x*f.n_1 + r_y*f.n_2);
+
+                // dot r and t_here
+                double rdt = (-r_x*f.n_2 + r_y*f.n_1);
+
+                double phi_there = fk->combinedphi;
+
+                if(r >=  (op->eps)-phi_here && rdn > 0.0 && fabs(phi_there) <= (op->eps)) { // estimate distance and velocity using outward looking radial vectors that are outside of current transition zone
+                    distance_integral += r*(op->smoothed_guassian_bump(2*phi_there))*(op->smoothed_guassian_bump(rdt));
+                    weight_integral += (op->smoothed_guassian_bump(2*phi_there))*(op->smoothed_guassian_bump(rdt));
+                }
+
+                if(rdn <= 0.0 && fabs(phi_there) <= (op->eps) && phi_there <= 0) { // compute curvature and patch velocity by looking into solid
+                  
+                    double n_xx = xsp*(fk[1].gradphileftx - fk->gradphileftx);
+                    double n_yy = ysp*(fk[ml].gradphidowny - fk->gradphidowny);
+                    
+                    curvature_integral += (n_xx + n_yy)*(op->smoothed_guassian_bump(2*phi_there))*(op->smoothed_guassian_bump(rdt));
+                    curavture_weight += (op->smoothed_guassian_bump(2*phi_there))*(op->smoothed_guassian_bump(rdt));
+                }
+            }   
+        }
+    }
+
+    // Compute distance estimate
+    if (weight_integral < small_number) {
+        distest = 4.5*(op->eps);
+    } else {
+        distest = distance_integral/weight_integral - ((op->eps) - phi_here) - (op->eps);
+    }
+
+
+    // Remove any distance estimates that are looking at own edge
+    if (distest <= 0) {
+        distest = 4.5*(op->eps);
+    }
+
+    // Compute curvature
+    if (curavture_weight < small_number) {
+        curvature = 0;
+    } else {
+        curvature = curvature_integral/curavture_weight;
+    }
+
+
+}
+
+
 /** Computes the acceleration at a grid point.
  * \param[in] fp a pointer to the grid point to consider.
  * \param[in] ij the index of the grid point to consider.
  * \param[out] (accx,accy) the components of acceleration.
  * \param[in] (x,y) the physical position of the grid point.
+ * \param[in] dt timestep
+ * \param[in] friction whether to include the contribution from friction in the
+ *                     acceleration.
  * \param[in] pressure whether to include the contribution from the pressure
  *                     gradient. This is used in the predictor step, but not in
  *                     the computation of u_star since the pressure term is
  *                     dealt with in the projection. */
-void fluid_2d::acceleration(field *fp,int ij,double &accx,double &accy,double x,double y,bool pressure) {
-    field &f=*fp,&fr=fp[1],&fu=fp[ml];
-    double accx_=0,accy_=0;
 
-    // Calculate net force due to stress imbalance
+void fluid_2d::acceleration(field *fp,int ij,double &accx,double &accy,double x,double y,const double&  dt,bool friction,bool pressure) {
+    field &f=*fp,&fr=fp[1],&fu=fp[ml];
+    double accx_=0,accy_=0,contaccx=0,contaccy=0;
+
     accx=xsp*(fr.s11-f.s11)+ysp*(fu.s12-f.s12);
     accy=xsp*(fr.s21-f.s21)+ysp*(fu.s22-f.s22);
 
@@ -1040,14 +1600,104 @@ void fluid_2d::acceleration(field *fp,int ij,double &accx,double &accy,double x,
         }
     }
 
-    // All previous contributions are forces. Now divide by rho to get the
-    // acceleration.
+
+    // Self Contact Acceleration - With Heaviside
+    obj_field **op=olist; //This does not have the correct shear modulus for many interacting objects
+
+
+    // take only force in transition zone
+    contaccx = f.contdivx*(*op)->trans_func(fp->combinedphi); //(fp->combinedphi>((*op)->eps)?0:1)*(fp->combinedphi<0?0:1);
+    contaccy = f.contdivy*(*op)->trans_func(fp->combinedphi); //(fp->combinedphi>((*op)->eps)?0:1)*(fp->combinedphi<0?0:1); 
+
+    // coefficients friction force
+    double omegafriction = 0.01;
+    double zetafriction = 0.99;
+    double alphae =  omegafriction*omegafriction/(dt*dt)*f.rho*dx*((*op)->eps)/((*op)->G)*1/(1 - zetafriction*zetafriction); //0.01 used previously, note actual equation has no sqrt, so real zetafriction\approx 0.977
+    double alphaeta =  -alphae + 2*zetafriction/dt*sqrt(alphae*f.rho*dx*((*op)->eps)/((*op)->G));
+
+    // Colliding rectangle case
+    //double rhos = 50;
+    //double g = 1.0;
+    //double H = 2*0.333;
+    //double normal_force_multip = dx/((*op)->eps)*g*H*rhos*1/((*op)->G); 
+
+    // Colliding disk case
+    //double normal_force_multip = M_PI/2*0.1*dx/((*op)->eps);
+
+    // Disk in hoop case
+    double normal_force_multip = 0.1;
+
+    // Flappers
+    // double normal_force_multip = 0.005;
+
+    // lamprey
+    // double normal_force_multip = 0.01;
+
+    contaccx *= normal_force_multip;
+    contaccy *= normal_force_multip;
+    fp->F_norm_x = contaccx;
+    fp->F_norm_y = contaccy;
+    double Force_normal_mag = sqrt(contaccx*contaccx + contaccy*contaccy);
+    fp->F_norm_mag = Force_normal_mag;
+    
+    // Add self-repulsion force
+    accx+=contaccx;
+    accy+=contaccy;
+
+    // Calculate Friction only do full calculation with friction force spring update if friction bool is true
+    if (friction) {
+        
+        // FRICTION CALCULATION VIA PREDICTIVE MODEL, INCREMEMNTRAL FROM VELOCITY DIFFERENCE
+        double Friction_trial_accx = f.Ff_e_x + ((*op)->G)*xsp*1/((*op)->eps)*f.relative_velocity_tan_field*(alphaeta*dt + alphae*dt)*(-f.n_2);
+        double Friction_trial_accy = f.Ff_e_y + ((*op)->G)*ysp*1/((*op)->eps)*f.relative_velocity_tan_field*(alphaeta*dt + alphae*dt)*(f.n_1);
+        
+        double Friction_Force_mag;
+        double v_elastic_x, v_elastic_y;
+
+        if (((*op)->mufr)*Force_normal_mag > small_number) {
+            Friction_Force_mag = sqrt(Friction_trial_accx*Friction_trial_accx + Friction_trial_accy*Friction_trial_accy);
+            if (Friction_Force_mag > ((*op)->mufr)*Force_normal_mag) {
+                Friction_trial_accx *= ((*op)->mufr)*Force_normal_mag/Friction_Force_mag;
+                Friction_trial_accy *= ((*op)->mufr)*Force_normal_mag/Friction_Force_mag;
+                v_elastic_x = (Friction_trial_accx - f.Ff_e_x)*dx/((*op)->G)*((*op)->eps)*1/(alphaeta*dt + alphae*dt);
+                v_elastic_y = (Friction_trial_accy - f.Ff_e_y)*dy/((*op)->G)*((*op)->eps)*1/(alphaeta*dt + alphae*dt);
+                fp->Ff_e_x += ((*op)->G)*xsp*1/((*op)->eps)*v_elastic_x*(alphae*dt);
+                fp->Ff_e_y += ((*op)->G)*ysp*1/((*op)->eps)*v_elastic_y*(alphae*dt);
+            } else {
+                fp->Ff_e_x += ((*op)->G)*xsp*1/((*op)->eps)*f.relative_velocity_tan_field*(alphae*dt)*(-f.n_2);
+                fp->Ff_e_y += ((*op)->G)*ysp*1/((*op)->eps)*f.relative_velocity_tan_field*(alphae*dt)*(f.n_1);                
+            }
+        } else {
+            Friction_trial_accx = 0;
+            Friction_trial_accy = 0;
+            v_elastic_x = (-f.Ff_e_x)*dx/((*op)->G)*((*op)->eps)*1/(alphaeta*dt + alphae*dt);
+            v_elastic_y = (-f.Ff_e_y)*dy/((*op)->G)*((*op)->eps)*1/(alphaeta*dt + alphae*dt);
+            fp->Ff_e_x = 0;
+            fp->Ff_e_y = 0;
+        }
+        
+
+    // Save friction force
+    fp->Ffx = Friction_trial_accx;
+    fp->Ffy = Friction_trial_accy;
+
+    Friction_Force_mag = sqrt((f.Ffx)*(f.Ffx)+(f.Ffy)*(f.Ffy));
+    fp->F_fric_mag = Friction_Force_mag;
+
+    }
+    
+    // Add friction to acceleration - Note we always do this even if friction Bool is false. But if friction Bool is false, we don't update the friction spring field
+    accx += f.Ffx;
+    accy += f.Ffy;
+
+    // All previous contributions are forces. Now divide by rho to get the acceleration.
     accx/=f.rho;accy/=f.rho;
 
     // Add the extra accelerations, which are not normalized by 1/rho
     accx+=accx_;
     accy+=accy_;
 }
+
 
 /** Calculates the wall forces when object close to four edges.
  * \param[in] (x,y) the position of the current field pointing to.
@@ -1076,6 +1726,8 @@ void fluid_2d::wall_force(double x,double y,double phiv,double &fx,double &fy) {
                  *(phiv>-dy?(phiv>dy?0:0.5*(1-phiv*ysp)):1);
     }
 }
+
+
 
 /** Use the tangential-stability derivatives to compute X,Y at the edge
  *  in a half-timestep */
@@ -1274,8 +1926,9 @@ void fluid_2d::update_reference_map(const double& dt) {
 
 /** Computes the intermediate velocity u_star, prior to performing the
  * finite-element projection.
- * \param[in] dt the timestep to use. */
-void fluid_2d::compute_ustar(const double& dt) {
+ * \param[in] dt the timestep to use. 
+ * \param[in] friction whether or not to include friction in ustar update */
+void fluid_2d::compute_ustar(const double& dt, bool friction) {
     double hx=0.5*dt*xsp,hy=0.5*dt*ysp;
 #pragma omp parallel for
     for(int j=0;j<n;j++) {
@@ -1283,9 +1936,13 @@ void fluid_2d::compute_ustar(const double& dt) {
         int ij=j*ml;
         for(field *fp=fm+ij,*fe=fp+m;fp<fe;fp++,x+=dx,ij++) {
             field &f=*fp,&fr=fp[1],&fu=fp[ml];
-            acceleration(fp,ij,accx,accy,x,y,false);
+            acceleration(fp,ij,accx,accy,x,y,dt,friction,false);
+
             f.c0=f.u-hx*(fr.ul+f.ul)*(fr.ul-f.ul)-hy*(fu.vd+f.vd)*(fu.ud-f.ud)+dt*accx;
             f.c1=f.v-hx*(fr.ul+f.ul)*(fr.vl-f.vl)-hy*(fu.vd+f.vd)*(fu.vd-f.vd)+dt*accy;
+
+            fp->ustar=f.c0;
+            fp->vstar=f.c1;
         }
     }
 }
@@ -1379,6 +2036,7 @@ void fluid_2d::init_tracers() {
 
         // Create a random position vector within the simulation region
         double tx=rnd(ax,bx),ty=rnd(ay,by);
+        //double tx=0.5,ty=0.5;
 
         // If this position is within the solid, skip it
         if(!inside_object(tx,ty)) {*(tp++)=tx;*tp=ty;tp+=3;}
@@ -1493,6 +2151,27 @@ double fluid_2d::min_phi(int ij) {
         if((*op)->phi_base[ij]<mphi) mphi=(*op)->phi_base[ij];
     return mphi;
 }
+
+/** Finds the value of phi1 field at a point, used for diagnostic
+ * \param[in] ij the gridpoint index to consider, relative to the base memory
+ *               structure including ghost regions.
+ * \return The minimum phi value. */
+double fluid_2d::phi1(int ij) {
+    obj_field **op=olist;
+    double phi=(*op)->phi_base[ij];
+    return phi;
+}
+
+/** Finds the value of phi1 field at a point, used for diagnostic
+ * \param[in] ij the gridpoint index to consider, relative to the base memory
+ *               structure including ghost regions.
+ * \return The minimum phi value. */
+double fluid_2d::phi2(int ij) {
+    obj_field **op=olist;
+    double phi=(*op)->phi_base[ij];
+    return phi;
+}
+
 
 /** Finds the obj_field corresponding to the minimum of the level set fields at
  * a given gridpoint.

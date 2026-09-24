@@ -30,17 +30,80 @@ double obj_circle::phi(double X,double Y) {
  * \param[in,out] (accx,accy) the acceleration vector to add to. */
 void obj_circle::accel(double x,double y,double X,double Y,
                        double phiv,double &accx,double &accy) {
-    accy-=grav*op->trans_func_in(phiv);
+    accy+=grav*op->trans_func_in(phiv);
+    //accx-=grav*op->trans_func_in(phiv);
+
 }
 
-/** Applies a gravitational acceleration to the square.
+/** Applies an acceleration to the square.
  * \param[in] (x,y) the current position.
  * \param[in] (X,Y) the reference map at this position.
  * \param[in] phiv the level set value.
  * \param[in,out] (accx,accy) the acceleration vector to add to. */
 void obj_square::accel(double x,double y,double X,double Y,
                        double phiv,double &accx,double &accy) {
-    accy-=grav*op->trans_func_in(phiv);
+    if(y>0) {
+        accy-=grav*op->trans_func_in(phiv); //shear force
+        accx-=grav*op->trans_func_in(phiv); //force down
+    } else {
+        accy+=grav*op->trans_func_in(phiv); //shear force
+        accx+=grav*op->trans_func_in(phiv); //force up
+    }
+
+}
+
+
+/** Sets up the rectangle object,
+ * calculating stiffness constants.
+ * \param[in] f2d a reference to the parent fluid_2d class. */
+void obj_rectangle::start_extra(fluid_2d &f2d) {
+
+    // Set the anchoring stiffness so that the natural frequency is ten times
+    // the numerical stability limit
+    K_stiff=0.01/(f2d.dt_reg*f2d.dt_reg);
+    printf("# Anchoring K_stiff       : %g (1/T^2)\n",K_stiff);
+}
+
+
+/** Applies an acceleration to the rectangle.
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_rectangle::accel(double x,double y,double X,double Y,
+    double phiv,double &accx,double &accy) {
+    
+    /* Ramp slide simulation */
+    if (T<=40) {
+        accx+=0;
+        accy-=grav*op->trans_func_in(phiv);
+    } else {
+        accx+=grav*op->trans_func_in(phiv)*sin(ceil((T-40)/50)*gravangle);
+        accy-=grav*op->trans_func_in(phiv)*cos(ceil((T-40)/50)*gravangle);
+    }
+
+    // Move back to original position
+    if (fixed==true) {
+        accx-=K_stiff*(x-cx-X)*op->trans_func_in(phiv);
+        accy-=K_stiff*(y-cy-Y)*op->trans_func_in(phiv);
+    }
+}
+
+/** Applies an acceleration to the rectangle.
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_tworectangles::accel(double x,double y,double X,double Y,
+    double phiv,double &accx,double &accy) {
+    if(Y > 0) { // Move Top rectangle
+        accy-=K_stiff*(y-(Y+pos_y))*op->trans_func_in(phiv);
+        accx-=K_stiff*(x-(X+pos_x))*op->trans_func_in(phiv);
+    }
+    if(Y < 0) { // Move Bottom rectangle
+        accy-=K_stiff*(y-(Y-pos_y))*op->trans_func_in(phiv);
+        accx-=K_stiff*(x-X)*op->trans_func_in(phiv);
+    }
 }
 
 /** Initializes the triangle shape, by computing normal vectors to its three
@@ -67,6 +130,37 @@ void obj_triangle::accel(double x,double y,double X,double Y,
     accy-=grav*op->trans_func_in(phiv);
 }
 
+/** Computes the simulation time.
+ * \param[in] the current simulation time. */
+void obj_rounded_rod::pre_stress_setup(double time) {
+    T=time;
+}
+
+/** Computes the simulation time.
+ * \param[in] the current simulation time. */
+void obj_rectangle::pre_stress_setup(double time) {
+    T=time;
+}
+
+/** Computes the simulation time.
+ * \param[in] the current simulation time. */
+void obj_tworectangles::pre_stress_setup(double time) {
+    T=time;
+    pos_y = T<=6? -(0.39)*T/6:-(0.39); //0.39 comes from 2*1.3*tw*dx initial distance from hoop
+    pos_x = T>=12? 1.2*sin(2*M_PI*(T-12)/60):0;
+}
+
+/** Sets up the rectangle object,
+ * calculating stiffness constants.
+ * \param[in] f2d a reference to the parent fluid_2d class. */
+void obj_tworectangles::start_extra(fluid_2d &f2d) {
+
+    // Set the anchoring stiffness so that the natural frequency is ten times
+    // the numerical stability limit
+    K_stiff=0.01/(f2d.dt_reg*f2d.dt_reg);
+    printf("# Anchoring K_stiff       : %g (1/T^2)\n",K_stiff);
+}
+
 /** Applies a gravitational acceleration to the rounded rod.
  * \param[in] (x,y) the current position.
  * \param[in] (X,Y) the reference map at this position.
@@ -74,10 +168,22 @@ void obj_triangle::accel(double x,double y,double X,double Y,
  * \param[in,out] (accx,accy) the acceleration vector to add to. */
 void obj_rounded_rod::accel(double x,double y,double X,double Y,
                             double phiv,double &accx,double &accy) {
-    accy-=grav*op->trans_func_in(phiv);
+    //accy-=grav*op->trans_func_in(phiv);
+    
+    //Squish over first few seconds
+
+    if(Y>=0) {
+        if(x>0) { //(X-0.0587)*(X-0.0587)+Y*Y<=0.02*0.02) {
+            accy+=0.02*grav*op->trans_func_in(phiv); //shear force, left side moves up
+            accx-=grav*op->trans_func_in(phiv); //force left, left side moves right
+        } else if(x<0) { //((X+0.0587)*(X+0.0587)+Y*Y<=0.02*0.02) {
+            accy-=0.02*grav*op->trans_func_in(phiv); //shear force, right side moves down
+            accx+=grav*op->trans_func_in(phiv); //force right, right side moves left
+        }
+    }
 }
 
-/** Computes the level set function of the squaree as a function of position.
+/** Computes the level set function of the square as a function of position.
  * \param[in] (x,y) the position to consider.
  * \return The level set function. */
 double obj_square::phi(double X,double Y) {
@@ -277,6 +383,55 @@ double obj_rounded_rod::phi(double X,double Y) {
     return (fY<0?fabs(X):sqrt(fY*fY+X*X))-cr;
 }
 
+/** Computes the level set function of the rectangle as a function of the
+ * reference map.
+ * \param[in] (X,Y) the reference map position to consider.
+ * \return The level set function. */
+double obj_rectangle::phi(double X,double Y) {
+    X=fabs(X)-cr;
+    Y=fabs(Y)-cl;
+    return X<0||Y<0?std::max(X,Y):sqrt(X*X+Y*Y);
+}
+
+/** Computes the level set function of the rectangle as a function of the
+ * reference map.
+ * \param[in] (X,Y) the reference map position to consider.
+ * \return The level set function. */
+double obj_lshape::phi(double X,double Y) {
+    double XU = fabs(X - cr) - cr;
+    double Xl = fabs(X - cl) - cl;
+    double YU = fabs(Y - cl) - cl;
+    double Yl = fabs(Y - cr) - cr;
+
+    if ((XU < 0 && Xl < 0) || (YU < 0 && X < 2*cl) || (YU < 0 && Yl < 0) || (X < 0 && Y < 0 && X < 2*cl)) {
+        return std::min(std::max(XU,YU),std::max(Xl,Yl));
+    } else if (X < 0 && YU > 0) {
+        return sqrt(YU*YU + Xl*Xl);
+    } else if ((X > 2*cl && Y < 0) || (Y < X && X > 2*cl && Y > 2*cr)) {
+        return sqrt(Yl*Yl + Xl*Xl);
+    } else if (Y > X && X > 2*cr && Y > 2*cl) {
+        return sqrt(YU*YU + XU*XU);
+    } else {
+        return 0;
+    }
+}
+
+/** Computes the level set function as a function of position. Creates two rectangles reflected across the x axis
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_tworectangles::phi(double X,double Y) {
+    // Two Rectangles 
+    if (Y>=0) {
+        X=fabs(X-cx)-cr;
+        Y=fabs(Y-cy)-cl;
+        return X<0||Y<0?std::max(X,Y):sqrt(X*X+Y*Y);
+    } else {
+        X=fabs(X-cx)-cr;
+        Y=fabs(Y+cy)-cl;
+        return X<0||Y<0?std::max(X,Y):sqrt(X*X+Y*Y);
+    }    
+}
+
 /** Computes the level set function of the flapper as a function of the
  * reference map.
  * \param[in] (X,Y) the reference map position to consider.
@@ -289,7 +444,7 @@ double obj_flapper::phi(double X,double Y) {
 /** Computes the current contraction amount of the flapper.
  * \param[in] time the current simulation time. */
 void obj_flapper::pre_stress_setup(double time) {
-    double a=sin(omega*time);
+    double a= sin(omega*time);
     a*=a*a;a*=a;a*=a;
     con=-amp*a;
 }
@@ -300,6 +455,38 @@ void obj_flapper::pre_stress_setup(double time) {
  * \param[in,out] F the deformation gradient tensor to modify. */
 void obj_flapper::actuate(double X,double Y,mat &F) {
     double fX=fabs(X)-al,ph=(fX<0?fabs(Y):sqrt(fX*fX+Y*Y))-ar;
+    if(ph<op->eps) {
+        double fac=exp(con*Y*op->trans_func_in(ph));
+        F.a*=fac;F.b*=1./fac;
+        F.c*=fac;F.d*=1./fac;
+    }
+}
+
+/** Computes the level set function of the flagella as a function of the
+ * reference map.
+ * \param[in] (X,Y) the reference map position to consider.
+ * \return The level set function. */
+double obj_flagella::phi(double X,double Y) {
+    double fX=fabs(X)-cl-rad;
+    double rod_levelset = (fX<0?fabs(Y):sqrt(fX*fX+Y*Y))-cr;
+    double disk_levelset = sqrt(X*X+Y*Y)-rad;
+    return std::min(rod_levelset,disk_levelset);
+}
+
+/** Computes the current contraction amount of the flapper.
+ * \param[in] time the current simulation time. */
+void obj_flagella::pre_stress_setup(double time) {
+    double a= sin(omega*time);
+    a*=a*a;a*=a;a*=a;
+    con=-amp*a;
+}
+
+/** Modifies the deformation gradient tensor to apply the flapper swimming
+ * motion.
+ * \param[in] (X,Y) the reference map position to consider.
+ * \param[in,out] F the deformation gradient tensor to modify. */
+void obj_flagella::actuate(double X,double Y,mat &F) {
+    double fX=fabs(X)-al-rad,ph=(fX<0?fabs(Y):sqrt(fX*fX+Y*Y))-ar;
     if(ph<op->eps) {
         double fac=exp(con*Y*op->trans_func_in(ph));
         F.a*=fac;F.b*=1./fac;
@@ -559,7 +746,7 @@ double obj_lamprey::phi(double X,double Y) {
 
 /** Computes the overall amplitude of swimming, and the shift of the
  * contraction wave down the lamprey body.
- * \param[in] the current simulation time. */
+ * \param[in] time current simulation time. */
 void obj_lamprey::pre_stress_setup(double time) {
     sh=time/T;
     double o=2*sh;
@@ -580,8 +767,355 @@ void obj_lamprey::actuate(double X,double Y,mat &F) {
 }
 
 /** Computes the level set function as a function of position.
+ * \param[in] (x,y) the position to consider.
+ * \return The level set function. */
+double obj_jellyfish::phi(double X,double Y) {
+    return sqrt(X*X+Y*Y)-cr;
+}
+
+/** Computes the amplitude of jellyfish muscle activation.
+ * \param[in] the current simulation time. */
+void obj_jellyfish::pre_stress_setup(double time) {
+    Amp = op->smoothed_guassian_bump(op->eps*(time-T)/dT)*A;
+}
+
+/** Apply the actuation to create the jellyfish muscle activation
+ * \param[in] (X,Y) the reference map at this point.
+ * \param[in,out] F the deformation gradient tensor to modify. */
+void obj_jellyfish::actuate(double X,double Y,mat &F) {
+    double pos_actuate_x = 0.5*cr;
+    double pos_actuate_y = 0.0*cr;
+    double cth = pos_actuate_x/sqrt(pos_actuate_x*pos_actuate_x+pos_actuate_y*pos_actuate_y);
+    double sth = pos_actuate_y/sqrt(pos_actuate_x*pos_actuate_x+pos_actuate_y*pos_actuate_y);
+
+    double r_actuate = 0.25*cr;
+    
+    double dist_actuate = sqrt((X-pos_actuate_x)*(X-pos_actuate_x)+(Y-pos_actuate_y)*(Y-pos_actuate_y));
+
+    double actuate_amp = 1;
+    actuate_amp += Amp*op->smoothed_guassian_bump((op->eps)/r_actuate*(dist_actuate-r_actuate));
+
+    double F_a11 = actuate_amp*cth;
+    double F_a12 = -1./actuate_amp*sth;
+    double F_a21 = actuate_amp*sth;
+    double F_a22 = 1./actuate_amp*cth;
+
+    F.a = F_a11*F.a+F_a21*F.b;
+    F.b = F_a12*F.a+F_a22*F.b;
+    F.c = F_a11*F.c+F_a21*F.d;
+    F.d = F_a12*F.a+F_a22*F.d;
+    
+
+    /* polar coordinates
+    double r = sqrt(X*X+Y*Y);
+    double F_a11 = 1.0;
+    double F_a22 = 1.0;
+    double F_a12 = 0.0;
+    double F_1 = 1+Amp*(op->smoothed_guassian_bump(1/4*(r-cr/2)))*(op->smoothed_guassian_bump(Y/4));
+    if (Y>0) {
+        double cth = X/r;
+        double sth = Y/r;
+        F_a11 = F_1*cth*cth+1./F_1*sth*sth;
+        F_a22 = F_1*sth*sth+1./F_1*cth*cth;
+        F_a12 = F_1*cth*sth-1./F_1*cth*sth;
+    } else if (Y<0) {
+        double cth = X/r;
+        double sth = -Y/r;
+        F_a11 = F_1*cth*cth+1./F_1*sth*sth;
+        F_a22 = F_1*sth*sth+1./F_1*cth*cth;
+        F_a12 = F_1*cth*sth-1./F_1*cth*sth;
+    }
+    F.a = F_a11*F.a+F_a12*F.b;
+    F.b = F_a12*F.a+F_a22*F.b;
+    F.c = F_a11*F.c+F_a12*F.d;
+    F.d = F_a12*F.a+F_a22*F.d;
+    */
+}
+
+/** Computes the level set function as a function of position.
  * \param[in] (X,Y) the position to consider.
  * \return The level set function. */
 double obj_hoop::phi(double X,double Y) {
     return fabs(sqrt(X*X+Y*Y)-cc)-cr;
+}
+
+/** Applies an acceleration due to a rotating anchor.
+ * \param[in] (x,y) the position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,acy) the acceleration vector to add to. */
+void obj_hoop::accel(double x,double y,double X,double Y,
+    double phiv,double &accx,double &accy) {
+
+double rsq=sqrt(x*x+y*y);
+double theta = acos(x/rsq);
+double K=K_stiff*op->trans_func_in(phiv);
+accx-=K*sin(theta);
+accy+=K*cos(theta);
+}
+
+/** Sets up the circle and hoop object,
+ * calculating stiffness constants.
+ * \param[in] f2d a reference to the parent fluid_2d class. */
+void obj_circle_hoop::start_extra(fluid_2d &f2d) {
+
+    // Set the anchoring stiffness so that the natural frequency is ten times
+    // the numerical stability limit
+    K_stiff=0.01/(f2d.dt_reg*f2d.dt_reg);
+    printf("# Anchoring K_stiff       : %g (1/T^2)\n",K_stiff);
+}
+
+/** Computes the level set function as a function of position.
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_circle_hoop::phi(double X,double Y) {
+    double radius = sqrt(X*X+Y*Y);
+    if (radius<=0.5*(cr+(ca-ct))) {
+        return radius - cr;
+    } else {
+        return fabs(radius-ca)-ct;
+    } 
+}
+
+/** Calculates the rotation of the inner circle prior to a stress computation.
+ * \param[in] time the current simulation time. */
+void obj_circle_hoop::pre_stress_setup(double time) {
+    double ang=-time*omega,theta=ang;
+    cth=cos(theta);sth=sin(theta);
+}
+
+/** Applies an acceleration due to the inner circle to keep it in place
+ * \param[in] (x,y) the position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the levelset value
+ * \param[in,out] (accx,acy) the acceleration vector to add to. */
+void obj_circle_hoop::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+
+    // anchoring force, spin on inside, fixed on outside
+    double radius = sqrt(x*x+y*y);
+    if(radius <= 0.5*cr) {
+        double rx=X*cth-Y*sth,ry=X*sth+Y*cth;
+        double K=K_stiff*op->trans_func_in(phiv);
+        accx-=K*(x-rx);
+        accy-=K*(y-ry);
+    }
+    if(radius >= (ca)) {
+        double K=K_stiff*op->trans_func_in(phiv);
+        accx-=K*(x-X);
+        accy-=K*(y-Y);
+    }
+}
+
+/** Computes the level set function as a function of position. For U with rounded ends, U bottom center at origin.
+ * Link to desmos grid: https://www.desmos.com/3d/45a67d2387
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_Ucurve::phi(double X,double Y) {
+    double x_offset = -(cr + ch)/2;
+    if(0<=X-x_offset && (X-x_offset)<=ch) {
+        return fabs(fabs(Y)-cc)-cr;
+    }
+    else if (ch<X-x_offset) {
+        return fabs(sqrt(Y*Y+(X-x_offset-ch)*(X-x_offset-ch))-cc)-cr;
+    }
+    else if (X<0) {
+        return sqrt((fabs(Y)-cc)*(fabs(Y)-cc)+(X-x_offset)*(X-x_offset))-cr;
+    }    
+    return 0.0;
+}
+
+/** Sets up the Ucurve object,
+ * calculating stiffness constants.
+ * \param[in] f2d a reference to the parent fluid_2d class. */
+void obj_Ucurve::start_extra(fluid_2d &f2d) {
+
+    // Set the anchoring stiffness so that the natural frequency is ten times
+    // the numerical stability limit
+    K_stiff=0.01/(f2d.dt_reg*f2d.dt_reg);
+    printf("# Anchoring K_stiff       : %g (1/T^2)\n",K_stiff);
+}
+
+/** Calculates the time
+ * \param[in] time the current simulation time. */
+void obj_Ucurve::pre_stress_setup(double time) {
+    T = time;
+}
+
+/** Applies an acceleration to the Ucurve.
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] time the current simulation time
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_Ucurve::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    if (T<80) {
+        if (Y < 0) {
+            accx-=K_stiff*(x-X)*op->trans_func_in(phiv);
+        } else if (Y > 0) {
+            accx-=K_stiff*(x-X)*op->trans_func_in(phiv);
+        }
+    } else {
+        double pos_val = 0.5*(1 + tanh(-0.5*(X - 2)))*0.2*sin(2*M_PI*(T-80)/120);
+        if (Y < 0) {
+            accx-=K_stiff*(x-(X+pos_val))*op->trans_func_in(phiv);
+        } else if (Y > 0) {
+            accx-=K_stiff*(x-(X-pos_val))*op->trans_func_in(phiv);
+        }    
+    }
+    
+    double pos_val_y = 0.5*(1 + tanh(-0.5*(X - 2)))*0.93*std::max(-(cc - cr)/2*T/80,-(cc - cr)/2); //0.95 crash, but close
+    if (Y > 0) {
+        accy-=K_stiff*(y-(Y+pos_val_y))*op->trans_func_in(phiv);
+    } else if (Y < 0) {
+        accy-=K_stiff*(y-(Y-pos_val_y))*op->trans_func_in(phiv);
+    } 
+}
+
+/** Computes the level set function as a function of position. For accordian with square ends, origin is center of middle U. For cosine accordian, origin is where is would be if plotted. 
+ * https://www.desmos.com/3d/7153f39b40
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_accordiansingle::phi(double X,double Y) {
+    // single u accordian
+    if(fabs(X)<=cc) {
+        return fabs(ch*cos(M_PI*X/cc)-Y)-cr/2;
+    }
+    if(X>cc) {
+        return sqrt((X-cc)*(X-cc)+(Y+ch)*(Y+ch))-cr/2;
+    }    
+    if(X<-cc) {
+        return sqrt((X+cc)*(X+cc)+(Y+ch)*(Y+ch))-cr/2;
+    }
+    return 0.0;
+}
+
+double obj_accordianmultiple::phi(double X,double Y) {
+    // single u accordian
+    if(fabs(Y)<=cc) {
+        return fabs(ch*cos(3*M_PI*Y/cc)-X)-cr/2;
+    }
+    if(Y>cc) {
+        return sqrt((Y-cc)*(Y-cc)+(X+ch)*(X+ch))-cr/2;
+    }    
+    if(Y<-cc) {
+        return sqrt((Y+cc)*(Y+cc)+(X+ch)*(X+ch))-cr/2;
+    }
+    return 0.0;
+}
+
+/** Applies an acceleration to the accordian.
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] phiv the level set value.
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_accordiansingle::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    accy+=acceleration*op->trans_func_in(phiv);
+    /*
+    if(x>0)  {
+        accx-=acceleration*op->trans_func_in(phiv);
+    }
+    if(x<0)  {
+        accx+=acceleration*op->trans_func_in(phiv);
+    }   
+    */
+}
+
+void obj_accordianmultiple::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    accy+=acceleration*op->trans_func_in(phiv);
+    /*
+    if(x>0)  {
+        accx-=acceleration*op->trans_func_in(phiv);
+    }
+    if(x<0)  {
+        accx+=acceleration*op->trans_func_in(phiv);
+    }   
+    */
+}
+
+/** Sets up the twocircles object,
+ * calculating stiffness constants.
+ * \param[in] f2d a reference to the parent fluid_2d class. */
+void obj_twocircles::start_extra(fluid_2d &f2d) {
+
+    // Set the anchoring stiffness so that the natural frequency is ten times
+    // the numerical stability limit
+    K_stiff=0.01/(f2d.dt_reg*f2d.dt_reg);
+    printf("# Anchoring K_stiff       : %g (1/T^2)\n",K_stiff);
+
+    // Determine the final resting y position
+    final_y = sqrt((r + 2.5*dx)*(r + 2.5*dx) - 5*5);
+
+    // Determine radius of inner movement disk
+    inner_disk_move_ratio = 1.0 - 20.0*2.5*dx/r;
+}
+
+/** Computes the level set function as a function of position. Creates two circles above each other located on the y-axis
+ * \param[in] (X,Y) the position to consider.
+ * \return The level set function. */
+double obj_twocircles::phi(double X,double Y) {
+    // Two Circles
+    
+    if(Y>=0) {
+        return -r+sqrt(X*X+(Y-l)*(Y-l));
+    }
+    else {
+        return -r+sqrt(X*X+(Y+l)*(Y+l));
+    }   
+   
+}
+
+/** Calculates the displacement distance of indenting circles
+ * \param[in] time the current simulation time. */
+void obj_twocircles::pre_stress_setup(double time) {
+    pos_y = time<6? -(l-final_y)/6*time:-(l-final_y); //6 then 10 works
+    pos_x = time>10? velocity_shear*(time-10):0; // on v_shear, 0.07 works for G=1.6e4
+}
+
+/** Applies an acceleration to the two circles
+ * \param[in] (x,y) the current position.
+ * \param[in] (X,Y) the reference map at this position.
+ * \param[in] (l) the seperation between circles at t=0
+ * \param[in,out] (accx,accy) the acceleration vector to add to. */
+void obj_twocircles::accel(double x,double y,double X,double Y,
+                            double phiv,double &accx,double &accy) {
+    // distance moved by circle centres
+    if(sqrt(X*X+(Y+l)*(Y+l)) <= r) { // fix position of bottom circle
+        if(sqrt(X*X+(Y+l)*(Y+l)) <= inner_disk_move_ratio*r) { //85 works
+            //accx-=fabs(acceleration_shear)>0? K_stiff*(x-(X-pos_x))*op->trans_func_in(phiv):0;
+            accy-=K_stiff*(y-(Y-pos_y))*op->trans_func_in(phiv);
+        }
+        if (pos_x > 0) {
+            if(sqrt(X*X+(Y+l)*(Y+l)) <= inner_disk_move_ratio*r) {
+                accx-=K_stiff*(x-X)*op->trans_func_in(phiv);
+            }
+        } else {
+            if(sqrt(X*X+(Y+l)*(Y+l)) <= inner_disk_move_ratio*r) {
+                accx-=K_stiff*(x-X)*op->trans_func_in(phiv);
+            }
+        }
+        //accy+=acceleration_grav*op->trans_func_in(phiv);
+        //accx+=pos_x*op->trans_func_in(phiv);
+    }
+    if(sqrt(X*X+(Y-l)*(Y-l)) <= r) { // accelerate top circle
+        if(sqrt(X*X+(Y-l)*(Y-l)) <= inner_disk_move_ratio*r) {
+            //accx-=K_stiff*(x-(X+pos_x))*op->trans_func_in(phiv);
+            //accx-=fabs(pos_x)>0? //acceleration_shear*pos_x*op->trans_func_in(phiv):K_stiff*(x-X)*op->trans_func_in(phiv);
+            accy-=K_stiff*(y-(Y+pos_y))*op->trans_func_in(phiv);
+        }
+        if (pos_x > 0) {
+            if(sqrt(X*X+(Y-l)*(Y-l)) <= inner_disk_move_ratio*r) {
+                accx-=K_stiff*(x-(X+pos_x))*op->trans_func_in(phiv);
+            }
+        } else {
+            if(sqrt(X*X+(Y-l)*(Y-l)) <= inner_disk_move_ratio*r) {
+                accx-=K_stiff*(x-X)*op->trans_func_in(phiv);
+            }
+        }
+        //accy-=acceleration_grav*op->trans_func_in(phiv);
+        //accx-=pos_x*op->trans_func_in(phiv);
+    }
 }

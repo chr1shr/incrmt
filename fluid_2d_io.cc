@@ -88,10 +88,51 @@ void fluid_2d::write_files(int sn) {
         if(fflags&8192) output("J",9,sn);
     }
 
-    // Output the diagnostic fields
     if(fflags&2048) {
         output("ds",10,sn);
         output("dp",11,sn);
+    }
+
+    // Output the diagnostic fields
+    if(fflags&16384) {
+        output("gradphix",13,sn); //gradient phi
+        output("gradphiy",14,sn);
+        //output("contdivx",15,sn); //self-repulsion force
+        //output("contdivy",16,sn);   
+        //output("alpha_left",17,sn); //alpha
+        //output("alpha_down",18,sn);
+        //output("lambda_1",54,sn); //lambda repulsion eigenvectors
+        //output("lambda_2",55,sn);
+        //output("lambda_x_down",62,sn);
+        //output("lambda_y_down",63,sn);
+    
+        //output("sigma_xx",32,sn); //stress tensor terms
+        //output("sigma_xy",33,sn);
+        //output("sigma_yy",34,sn);
+    }   
+    if(fflags&32768) {
+        output("combinedphi",29,sn); // combined phi field
+        output("friction_x",30,sn); // friction forces
+        output("friction_y",31,sn);
+        output("force_fric_mag",50,sn);   
+        //output("friction_trial_x",41,sn);
+        //output("friction_trial_y",42,sn);    
+        output("force_norm_mag",48,sn);    
+        output("force_norm_x",56,sn);
+        output("force_norm_y",57,sn);
+        //output("force_elastic_x",51,sn);    
+        //output("force_elastic_y",52,sn);      
+    }
+
+    if(fflags&65536) {//output estimated phi and velocities
+        //output("estimateddist",35,sn);
+        //output("estimatedphiweight",36,sn);
+        //output("curvature",58,sn);
+        //output("ustar",45,sn);
+        //output("vstar",46,sn);
+        output("relative_velocity_field_tam",49,sn);  
+        //output("relative_velocity_field_norm",59,sn);  
+
     }
 
     // Output tracer positions if there are any
@@ -160,6 +201,44 @@ void fluid_2d::output(const char *prefix,const int mode,const int sn,int_box &ib
                 case 10: while(bp<be) *(bp++)=(fp++)->c0;break;
                 case 11: while(bp<be) *(bp++)=(fp++)->c1;break;
                 case 12: while(bp<be) *(bp++)=divergence(fp++);
+
+                // Diagnostic fields
+                case 13: while(bp<be) *(bp++)=(fp++)->n_1;break;
+                case 14: while(bp<be) *(bp++)=(fp++)->n_2;break; 
+                case 15: while(bp<be) *(bp++)=(fp++)->contdivx;break;
+                case 16: while(bp<be) *(bp++)=(fp++)->contdivy;break;
+                case 17: while(bp<be) *(bp++)=(fp++)->alpha_left;break;
+                case 18: while(bp<be) *(bp++)=(fp++)->alpha_down;break;
+                case 54: while(bp<be) *(bp++)=(fp++)->lambda_1;break;
+                case 55: while(bp<be) *(bp++)=(fp++)->lambda_2;break; 
+                case 62: while(bp<be) *(bp++)=(fp++)->lambda_x_down;break;
+                case 63: while(bp<be) *(bp++)=(fp++)->lambda_y_down;break; 
+
+                case 32: while (bp < be) *(bp++)=(fp->s11 + fp->s11c), fp++;break;
+                case 33: while (bp < be) *(bp++)=(fp->s12 + fp->s12c), fp++;break;
+                case 34: while (bp < be) *(bp++)=(fp->s22 + fp->s22c), fp++;break;
+                case 45: while (bp < be) *(bp++)=(fp->s22 + fp->ustar), fp++;break;
+                case 46: while (bp < be) *(bp++)=(fp->s22 + fp->vstar), fp++;break;
+
+                // Diagnostic fields Related to Friction
+                case 29: while(bp<be) *(bp++)=(fp++)->combinedphi;break;
+                case 30: while(bp<be) *(bp++)=(fp++)->Ffx;break;
+                case 31: while(bp<be) *(bp++)=(fp++)->Ffy;break;
+                case 41: while(bp<be) *(bp++)=(fp++)->F_trial_x;break;
+                case 42: while(bp<be) *(bp++)=(fp++)->F_trial_y;break; 
+                case 48: while(bp<be) *(bp++)=(fp++)->F_norm_mag;break; 
+                case 56: while(bp<be) *(bp++)=(fp++)->F_norm_x;break; 
+                case 57: while(bp<be) *(bp++)=(fp++)->F_norm_y;break; 
+                case 50: while(bp<be) *(bp++)=(fp++)->F_fric_mag;break; 
+                case 51: while(bp<be) *(bp++)=(fp++)->Ff_e_x;break; 
+                case 52: while(bp<be) *(bp++)=(fp++)->Ff_e_y;break;                
+
+                // Diagnostic estimated distance field
+                case 35: while(bp<be) *(bp++)=(fp++)->EstDist;break;
+                case 36: while(bp<be) *(bp++)=(fp++)->EstDistWeight;break;
+                case 58: while(bp<be) *(bp++)=(fp++)->curvature;break;
+                case 49: while(bp<be) *(bp++)=(fp++)->relative_velocity_tan_field;break; 
+                case 59: while(bp<be) *(bp++)=(fp++)->relative_velocity_norm_field;break; 
             }
         } else {
 

@@ -5,10 +5,18 @@
 #include <sys/stat.h>
 #include <vector>
 
+#if (defined(_WIN32) || defined(__WIN32__))
+    #include <direct.h>
+#endif
+
 #include "common.hh"
 #include "object.hh"
 #include "obj_field.hh"
 #include "fluid_2d.hh"
+
+#if (defined(_WIN32) || defined(__WIN32__))
+    #define mkdir(A, B) _mkdir(A)
+#endif
 
 int main(int argc,char **argv) {
 
@@ -50,6 +58,7 @@ int main(int argc,char **argv) {
     const double rhof=1,            // Fluid density
                  visc=2e-3,         // Fluid viscosity
                  G=1.3,             // Shear modulus
+                 mufr=0,            // Friction coefficient
 
     // Specify padding factors for extra viscosity and timestep
                  ev_mult=0.8,       // The multiplier to apply to the extra viscosity
@@ -117,7 +126,7 @@ retry:  x=rnd(-0.75,0.75);
         // Store the object for later insertion into the simulation
         printf("Object %d: (x,y)=(%g,%g)\n",k++,x,y);
         obj.push_back(nobj);
-        mc.push_back(mat_const(G,rhos,ev_trans_mult,set_velocity));
+        mc.push_back(mat_const(G,rhos,mufr,ev_trans_mult,set_velocity));
     }
 
     // Construct the simulation class and add objects

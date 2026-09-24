@@ -17,14 +17,18 @@ struct mat_const {
     double G;
     /** The solid density. */
     double rhos;
+    /** The friction coefficient. */
+    double mufr;    
     /** The multiplier to apply to the extra viscosity in the transition
      * region. */
     double ev_trans_mult;
+    /** Solid viscocity. */
+    double solid_visc;
     /** Whether the solid is initialized to its own velocity, or inherits it
      * from the fluid. */
     bool set_velocity;
-    mat_const(double G_,double rhos_,double ev_trans_mult_,bool set_velocity_=true)
-        : G(G_), rhos(rhos_), ev_trans_mult(ev_trans_mult_),
+    mat_const(double G_,double rhos_,double mufr_,double ev_trans_mult_,double solid_visc_,bool set_velocity_=true)
+        : G(G_), rhos(rhos_), mufr(mufr_), ev_trans_mult(ev_trans_mult_), solid_visc(solid_visc_), 
             set_velocity(set_velocity_) {}
 };
 
@@ -44,6 +48,8 @@ class obj_field {
         const double G;
         /** The solid density. */
         const double rhos;
+        /** The friction coefficient. */
+        const double mufr;
         /** The multiplier to apply to the extra viscosity in the transition
          * region. */
         const double ev_trans_mult;
@@ -51,6 +57,8 @@ class obj_field {
         const double eps;
         /** The level set pinning width. */
         const double pinw;
+        /** Solid viscocity. */
+        const double solid_visc;
         /** Whether the solid is initialized to its own velocity, or inherits it
          * from the fluid. */
         const bool set_velocity;
@@ -74,7 +82,7 @@ class obj_field {
         /** The extra viscosity to apply in the solid. */
         double ex_visc;
         obj_field(fluid_2d &f,object* obj_,mat_const mc);
-        void set_ex_visc(double tfac,double &sws_max,double &ex_visc_max,double &rhos_div_ev_min);
+        void set_ex_visc(double tfac, double &sws_max,double &ex_visc_max,double &rhos_div_ev_min);
         /** The class destructor frees the dynamically allocated memory. */
         ~obj_field() {
             delete [] sbase;
@@ -118,6 +126,40 @@ class obj_field {
         inline double tderiv_func_in(double x) {
             return x<-eps?0:0.5*(1+cos(M_PI*x/eps));
         }
+        /** Calculates a smoothed Gaussian bump function with a width of the transition zone
+         * \param[in] x the function argument.
+         * \return The function value. */
+        inline double smoothed_guassian_bump(double x) {
+            if (fabs(x) <= eps) {
+                return 0.5*(cos(M_PI*x/eps)+1);
+            } else {
+                return 0;
+            }
+        }
+        /** Calculates a smoothed Heaviside, from 0 at the solid edge to 1 at the end of fluid transition zone
+         * \param[in] x the function argument.
+         * \return The function value. */
+        inline double half_smooth_heaviside(double x) {
+            if (x <= 0) {
+                return 0;
+            } else if (x >= eps) {
+                return 1;
+            } else {
+                return 0.5*(1-cos(M_PI*x/eps));
+            }
+        }
+        /** Calculates derivative of smoothed Heaviside, from 0 at the solid edge to 1 at the end of fluid transition zone
+         * \param[in] x the function argument.
+         * \return The function value. */
+        inline double half_smooth_heaviside_derivative(double x) {
+            if (x <= 0) {
+                return 0;
+            } else if (x >= eps) {
+                return 0;
+            } else {
+                return 0.5*M_PI/eps*sin(M_PI*x/eps);
+            }
+        }        
         void pin();
         /** Initializes the reference map and level set values at a grid point
          * \param[in] ij the grid point index.

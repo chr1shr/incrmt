@@ -12,17 +12,21 @@
  *                 object's geometry and other attributes.
  * \param[in] mc the material constants. */
 obj_field::obj_field(fluid_2d &f,object* obj_,mat_const mc) :
-    ml(f.ml), nl(f.nl), mem(ml*nl), G(mc.G), rhos(mc.rhos),
-    ev_trans_mult(mc.ev_trans_mult), eps(f.eps), pinw(f.pinw*f.dx),
+    ml(f.ml), nl(f.nl), mem(ml*nl), G(mc.G), rhos(mc.rhos), mufr(mc.mufr),
+    ev_trans_mult(mc.ev_trans_mult), eps(f.eps), pinw(f.pinw*f.dx), solid_visc(mc.solid_visc),
     set_velocity(mc.set_velocity), sbase(new s_field[mem]), sm(sbase+2*ml+2),
-    ls(ml,nl,f.ax-1.5*f.dx,f.ay-1.5*f.dy,f.dx,f.dy,-eps-4.5*f.dx,eps+4.5*f.dx),
+    ls(ml,nl,f.ax-1.5*f.dx,f.ay-1.5*f.dy,f.dx,f.dy,-eps-1.1*eps,eps+3.6*eps),
     phi_base(ls.phi), phi(phi_base+2*ml+2), cbase(ls.s), cc(cbase+2*ml+2),
     obj(obj_), tf1(0.5/eps), tf2(0.5/M_PI), tf3(M_PI/eps) {}
+
+// CHANGE NARROW BAND HERE!! narrow band of 7 is from 2.5+4.5=7
+// To give custom size, change -eps-X*f.dx in inside or outside of solid!!
 
 /** Calculates the extra stabilising viscosity in this solid, and updates
  * several metrics used by the parent fluid_2d class in timestep selection.
  * \param[in] tfac the prefactor to use on the extra viscosity, incorporating
  *                 grid spacing and the constant multiplier.
+ * \param[in] solid_visc the solid viscocity if any
  * \param[in,out] sws_max the maximum shear wave speed in the fluid_2d
  *                        simulation, updated if this object has a higher
  *                        value.
@@ -39,8 +43,24 @@ void obj_field::set_ex_visc(double tfac,double &sws_max,double &ex_visc_max,doub
     if(sws>sws_max) sws_max=sws;
 
     // Set extra viscosity
-    ex_visc=tfac*rhos*sws;
+    if (solid_visc>0) {
+        ex_visc=tfac*std::max(solid_visc,rhos*sws);
+        
+        // printf("solid_visc\n");
+        // printf("solid_visc %g\n",solid_visc);
+        /* printf("G %g\n",G);
+        printf("ev_trans_mult %g\n",ev_trans_mult);
+        printf("rhos %g\n",rhos);
+        printf("ex_visc %g\n",ex_visc);
+        */
+    } else {
+        ex_visc=tfac*rhos*sws;
+        // printf("fluid_visc\n");
+    }
     if(ex_visc>ex_visc_max) ex_visc_max=ex_visc;
+    // printf("ex_visc_max %g\n",ex_visc_max);
+
+    
 
     // Set timestep factor, taking into account that in the transition region,
     // the extra viscosity contribution is multiplied
